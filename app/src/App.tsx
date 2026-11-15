@@ -76,6 +76,8 @@ export default function App() {
   const [viewerRequest, setViewerRequest] = useState(0);
   // 屏 3（M6）：编辑同样挂在 Browse 里，这里只发「请求打开」。
   const [editorRequest, setEditorRequest] = useState(0);
+  // 屏 4（M7）：批量处理同款信号。
+  const [batchRequest, setBatchRequest] = useState(0);
 
   const openDir = useCallback((path: string) => {
     if (!path) return;
@@ -153,6 +155,9 @@ export default function App() {
       } else if (k === "t" && ev.shiftKey) {
         ev.preventDefault();
         setView((v) => (v === "folder" ? "timeline" : "folder"));
+      } else if (k === "e" && !ev.shiftKey) {
+        ev.preventDefault();
+        setBatchRequest((n) => n + 1);
       }
     };
     window.addEventListener("keydown", onKeyDown);
@@ -299,7 +304,12 @@ export default function App() {
           </label>
         </div>
         <div className="tgroup">
-          <button className="tbtn" data-tip="">
+          <button
+            className="tbtn"
+            title="批量处理"
+            data-tip=""
+            onClick={() => setBatchRequest((n) => n + 1)}
+          >
             <Icon id="i-layers" size="sm" />
             批量
             <span className="tip">
@@ -350,6 +360,7 @@ export default function App() {
           onStatus={onStatus}
           openViewerKey={viewerRequest}
           openEditorKey={editorRequest}
+          openBatchKey={batchRequest}
           onViewerOpen={setViewerOpen}
         />
         <aside className="inspector" hidden={!inspectorOpen}>

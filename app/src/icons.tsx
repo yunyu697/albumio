@@ -98,6 +98,9 @@ const ICONS: Record<string, ReactNode> = {
       <path d="M7 5v14M17 5v14M3 9.5h4M3 14.5h4M17 9.5h4M17 14.5h4" />
     </>
   ),
+  // 屏 4（M7）：勾选框与开始按钮，几何从设计稿 symbol 复制。
+  "i-check": <path d="M4.5 12.5l4.5 4.5L19.5 6.5" />,
+  "i-play": <path d="M8 5.5l10 6.5-10 6.5z" />,
   // 屏 3（M6）：同样从设计稿 symbol 复制。
   "i-crop": <path d="M6 3v13a2 2 0 002 2h13M3 6h13a2 2 0 012 2v13" />,
   "i-rot-cw": <path d="M20 12a8 8 0 11-2.4-5.7M20 4v5h-5" />,
