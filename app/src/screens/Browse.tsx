@@ -28,6 +28,7 @@ import {
   type StatRow,
 } from "../data/source";
 import { bucketize, type TakenInfo } from "../data/timeline";
+import { watchDir, type DirChanges } from "../data/watch";
 import type { StatScheduler } from "../data/scheduler";
 import { isComposing, isTextInput } from "../keys";
 
@@ -142,6 +143,8 @@ export default function Browse({
   const viewerIndexRef = useRef<number | null>(null);
   const editorIndexRef = useRef<number | null>(null);
   const batchOpenRef = useRef(false);
+  // 增量变更时不能拿 state 里的 taken 做增量（会多一轮重渲染），用 ref 记「已读到的」。
+  const takenRef = useRef<Map<string, TakenInfo>>(new Map());
 
   currentRef.current = current;
   entriesRef.current = entries;
@@ -209,6 +212,7 @@ export default function Browse({
         thumbActiveL1.current = 0;
         lastScrollRef.current = 0;
         setTaken(new Map());
+        takenRef.current = new Map();
         setDated(0);
         setEntries(r.entries);
         const first = r.entries[0]?.path ?? null;
@@ -236,15 +240,21 @@ export default function Browse({
   }, [dir, reload, reloadKey]);
 
   // 时间线：按批读拍摄时间（一批 250，串行——EXIF 读取是磁盘操作，并发只会让机械盘抖动）。
+  // 只读「还没读到过的」路径：外部新增/改名时不能把 1 万项的 EXIF 全部重读一遍。
   useEffect(() => {
     if (view !== "timeline" || entries.length === 0) return;
     let alive = true;
-    const next = new Map<string, TakenInfo>();
     const paths = entries.map((e) => e.path);
+    const next = new Map(takenRef.current);
+    const missing = paths.filter((p) => !next.has(p));
+    if (missing.length === 0) {
+      setDated(paths.length);
+      return;
+    }
     const CHUNK = 250;
     (async () => {
-      for (let i = 0; i < paths.length; i += CHUNK) {
-        const slice = paths.slice(i, i + CHUNK);
+      for (let i = 0; i < missing.length; i += CHUNK) {
+        const slice = missing.slice(i, i + CHUNK);
         try {
           const rows = await takenTimes(slice);
           for (const r of rows) {
@@ -257,8 +267,11 @@ export default function Browse({
           for (const p of slice) next.set(p, { takenAt: Date.now(), inferred: true });
         }
         if (!alive) return;
+        takenRef.current = next;
         setTaken(new Map(next));
-        setDated(Math.min(paths.length, i + slice.length));
+        let known = 0;
+        for (const p of paths) if (next.has(p)) known++;
+        setDated(known);
       }
     })();
     return () => {
@@ -435,6 +448,150 @@ export default function Browse({
   const showToast = useCallback((data: Omit<ToastData, "id">) => {
     setToast({ ...data, id: ++toastIdRef.current });
   }, []);
+
+  /* ---------------- 屏 1：外部变更（M8） ---------------- */
+
+  /**
+   * 把一批外部变更合进网格：改名迁移 → 删除 → 新增/更新。
+   * 只动受影响的条目，不重列目录，选中与滚动位置保持不变。
+   */
+  const applyChanges = useCallback(
+    (changes: DirChanges) => {
+      if (changes.overflow) {
+        // 监听通道不可信：整目录重建，非模态提示，不阻断浏览（`docs/spike/S6.md` §4）。
+        showToast({
+          text: "目录变化可能未全部捕获，已自动刷新",
+          action: { label: "再次刷新", run: () => setReload((n) => n + 1) },
+        });
+        setReload((n) => n + 1);
+        return;
+      }
+
+      // 1. 改名：先把选中/当前/评分/缓存迁到新路径，保住"用户还在看同一张"。
+      const moved = new Map<string, string>();
+      for (const r of changes.renamed) moved.set(r.from, r.to);
+      if (moved.size) {
+        const to = (p: string) => moved.get(p) ?? p;
+        setCurrent((cur) => (cur ? to(cur) : cur));
+        setSelected((prev) => {
+          const next = new Set<string>();
+          for (const p of prev) next.add(to(p));
+          return next;
+        });
+        setRatings((prev) => migrateMap(prev, moved));
+        setFavorites((prev) => migrateSet(prev, moved) ?? prev);
+        for (const [from, dest] of moved) {
+          const st = statsRef.current.get(from);
+          if (st) {
+            statsRef.current.delete(from);
+            statsRef.current.set(dest, { ...st, path: dest });
+          }
+          const th = thumbState.current.get(from);
+          if (th) {
+            thumbState.current.delete(from);
+            thumbState.current.set(dest, th);
+          }
+          requestedRef.current.delete(from);
+        }
+      }
+
+      // 2. 删除：网格移除、释放缩略图，不留下灰块。
+      const gone = new Set(changes.removed);
+      if (gone.size) {
+        for (const p of gone) {
+          const st = thumbState.current.get(p);
+          if (st?.l0) releaseThumb(p, "l0", st.l0);
+          if (st?.l1) releaseThumb(p, "l1", st.l1);
+          thumbState.current.delete(p);
+          statsRef.current.delete(p);
+          requestedRef.current.delete(p);
+        }
+        setSelected((prev) => dropSet(prev, gone) ?? prev);
+        setRatings((prev) => dropKeys(prev, gone));
+        setFavorites((prev) => dropSet(prev, gone) ?? prev);
+        setTaken((prev) => {
+          if (![...gone].some((p) => prev.has(p))) return prev;
+          const next = new Map(prev);
+          for (const p of gone) next.delete(p);
+          takenRef.current = next;
+          return next;
+        });
+      }
+
+      // 3. 新增/更新：mtime 变了就丢掉旧缩略图，重新解码。
+      const byPath = new Map<string, Entry>();
+      for (const e of entriesRef.current) {
+        if (!gone.has(e.path)) byPath.set(e.path, e);
+      }
+      for (const u of changes.upserts) {
+        const before = statsRef.current.get(u.path);
+        if (!before || before.mtimeNs !== u.mtimeNs) {
+          const st = thumbState.current.get(u.path);
+          if (st?.l0) releaseThumb(u.path, "l0", st.l0);
+          if (st?.l1) releaseThumb(u.path, "l1", st.l1);
+          thumbState.current.delete(u.path);
+        }
+        byPath.set(u.path, { name: u.name, path: u.path, isDir: false });
+        statsRef.current.set(u.path, { path: u.path, size: u.size, mtimeNs: u.mtimeNs });
+        requestedRef.current.add(u.path);
+      }
+      const next = [...byPath.values()].sort(
+        (a, b) => naturalCmp(a.name, b.name) || naturalCmp(a.path, b.path)
+      );
+      setEntries(next);
+      setThumbTick((t) => t + 1);
+
+      // 当前项被外部删掉：顺延到原位置的下一个，而不是跳回第一张。
+      setCurrent((cur) => {
+        if (!cur || !gone.has(cur)) return cur;
+        const list = entriesRef.current;
+        const i = list.findIndex((e) => e.path === cur);
+        const fallback = next[Math.min(Math.max(i, 0), next.length - 1)];
+        return fallback?.path ?? null;
+      });
+
+      // 时间线：新增项补拍摄时间，分组在下一轮 bucketize 时自动落位。
+      if (view === "timeline" && changes.upserts.length) {
+        const paths = changes.upserts.map((u) => u.path);
+        void takenTimes(paths)
+          .then((rows) => {
+            setTaken((prev) => {
+              if (rows.length === 0) return prev;
+              const nextMap = new Map(prev);
+              for (const r of rows) {
+                nextMap.set(r.path, {
+                  takenAt: r.takenAt > 0 ? r.takenAt : Date.now(),
+                  inferred: r.failed || r.source === "inferred",
+                });
+              }
+              takenRef.current = nextMap;
+              return nextMap;
+            });
+          })
+          .catch(() => {
+            /* 读不到就回退 mtime，不阻断网格 */
+          });
+      }
+    },
+    [showToast, view]
+  );
+
+  // 监听当前目录；回调走 ref，避免每次重渲染都重启监听。
+  const applyChangesRef = useRef(applyChanges);
+  applyChangesRef.current = applyChanges;
+  useEffect(() => {
+    if (!dir) return;
+    let alive = true;
+    let stop: (() => void) | null = null;
+    void watchDir(dir, (c) => applyChangesRef.current(c)).then((fn) => {
+      if (alive) stop = fn;
+      else fn();
+    });
+    return () => {
+      alive = false;
+      stop?.();
+    };
+  }, [dir]);
 
   /** 从网格、统计与选中集里移除已删除的条目，并把当前项顺延到下一个。 */
   const applyRemoved = useCallback((paths: string[]) => {
@@ -911,4 +1068,65 @@ function shotStamp(ms: number): { date: string; time: string } {
     date: `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}`,
     time: `${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`,
   };
+}
+
+/* ---------------- 增量变更的小工具（M8） ---------------- */
+
+/** 改名迁移：只在新旧值不同时换引用，避免无谓重渲染。 */
+function migrateMap<T>(prev: Map<string, T>, moved: Map<string, string>): Map<string, T> {
+  let changed = false;
+  const next = new Map(prev);
+  for (const [from, to] of moved) {
+    const value = next.get(from);
+    if (value === undefined) continue;
+    next.delete(from);
+    next.set(to, value);
+    changed = true;
+  }
+  return changed ? next : prev;
+}
+
+function migrateSet(prev: Set<string>, moved: Map<string, string>): Set<string> | null {
+  let changed = false;
+  const next = new Set<string>();
+  for (const p of prev) {
+    const to = moved.get(p) ?? p;
+    if (to !== p) changed = true;
+    next.add(to);
+  }
+  return changed ? next : null;
+}
+
+function dropKeys<T>(prev: Map<string, T>, gone: Set<string>): Map<string, T> {
+  if (![...gone].some((p) => prev.has(p))) return prev;
+  const next = new Map(prev);
+  for (const p of gone) next.delete(p);
+  return next;
+}
+
+function dropSet(prev: Set<string>, gone: Set<string>): Set<string> | null {
+  if (![...gone].some((p) => prev.has(p))) return null;
+  const next = new Set(prev);
+  for (const p of gone) next.delete(p);
+  return next;
+}
+
+/** 与后端的自然序一致：数字段按数值比（`DSC_2` 在 `DSC_10` 前）。 */
+function naturalCmp(a: string, b: string): number {
+  const ax = a.match(/(\d+|\D+)/g) ?? [];
+  const bx = b.match(/(\d+|\D+)/g) ?? [];
+  const n = Math.min(ax.length, bx.length);
+  for (let i = 0; i < n; i++) {
+    const x = ax[i];
+    const y = bx[i];
+    if (/^\d/.test(x) && /^\d/.test(y)) {
+      const d = Number(x) - Number(y);
+      if (d !== 0) return d;
+      // 数值相同再按位数：001 与 1 不应互换位置。
+      if (x.length !== y.length) return x.length - y.length;
+    } else if (x !== y) {
+      return x < y ? -1 : 1;
+    }
+  }
+  return ax.length - bx.length;
 }

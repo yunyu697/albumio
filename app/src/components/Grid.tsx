@@ -240,20 +240,27 @@ export default function Grid({
   }, [range, lines, columns, width, viewportH, rowH, items.length, onVisibleRange]);
 
   // 键盘移动后把当前项滚进视野（虚拟列表里元素不一定已挂载，用几何算）。
-  // 只在"当前项真的换了"时动滚动：布局重建（切视图/改格宽）不能把用户的滚动位置顶回去。
+  // 只在"当前项真的换了位置"时动滚动：布局重建（切视图/改格宽）不能把用户的滚动位置顶回去；
+  // 外部改名（M8）只换 path、不换下标，同样不能把网格拽走。
   const currentIndex = current ? items.findIndex((x) => x.path === current) : -1;
-  const lastCurrent = useRef<string | null>(null);
+  const lastCurrentIndex = useRef(-1);
+  const lastCount = useRef(-1);
   useEffect(() => {
     const el = scrollRef.current;
-    if (!el || !current || current === lastCurrent.current || currentIndex < 0 || !width) return;
-    lastCurrent.current = current;
+    const countChanged = items.length !== lastCount.current;
+    lastCount.current = items.length;
+    if (currentIndex === lastCurrentIndex.current) return;
+    lastCurrentIndex.current = currentIndex;
+    // 外部增删（M8）会让当前项下标整体位移；这不是用户导航，不能把网格拽走。
+    if (countChanged) return;
+    if (!el || !current || currentIndex < 0 || !width) return;
     const top = rowTop[currentIndex];
     if (top === undefined) return;
     const bottom = top + rowH;
     if (top < el.scrollTop) el.scrollTop = Math.max(0, top - PAD);
     else if (bottom > el.scrollTop + el.clientHeight)
       el.scrollTop = bottom - el.clientHeight + PAD;
-  }, [current, currentIndex, rowTop, rowH, width]);
+  }, [current, currentIndex, rowTop, rowH, width, items.length]);
 
   const pinned = grouped ? groups![range.active] : undefined;
   const visibleLines = lines.slice(range.first, range.last + 1);
