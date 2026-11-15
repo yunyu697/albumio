@@ -1,0 +1,25 @@
+# 依赖
+node_modules/
+
+# 构建产物
+app/dist/
+app/src-tauri/target/
+app/src-tauri/gen/schemas/
+
+# 截图与验证产物（验收记录只保留 Markdown，图片不入库）
+app/docs/**/*.png
+
+# 本地环境与密钥
+.env
+.env.*
+*.key
+*.pem
+*.p12
+*.sig
+
+# 系统与编辑器
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.log

@@ -1,0 +1,21 @@
+[package]
+name = "albumio-core"
+version = "0.1.0"
+description = "Albumio 图像管线：探测、解码、方向、色彩、缩略图、缓存"
+edition = "2021"
+rust-version = "1.77"
+
+[dependencies]
+zune-jpeg = "0.5"
+jpeg-decoder = "0.3"
+image = { version = "0.25", default-features = false, features = ["png", "tiff", "bmp", "webp", "gif", "jpeg"] }
+fast_image_resize = "6"
+kamadak-exif = "0.6"
+lcms2 = "6"
+xxhash-rust = { version = "0.8", features = ["xxh3"] }
+webp = "0.3"
+thiserror = "2"
+serde = { version = "1", features = ["derive"] }
+
+[dev-dependencies]
+tempfile = "3"
