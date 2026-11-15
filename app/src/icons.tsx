@@ -41,7 +41,19 @@ const ICONS: Record<string, ReactNode> = {
       <circle cx="9.5" cy="16" r="2" />
     </>
   ),
-  "i-expand": <path d="M4 9V4h5M20 15v5h-5M20 9V4h-5M4 15v5h5" />,
+  "i-maximize": (
+    <>
+      <rect x="4" y="5" width="16" height="14" rx="2" />
+      <path d="M4 9.5h16" />
+    </>
+  ),
+  "i-fullscreen": <path d="M9 4H4v5M15 4h5v5M9 20H4v-5M15 20h5v-5" />,
+  "i-panel-right": (
+    <>
+      <rect x="3" y="4" width="18" height="16" rx="2" />
+      <path d="M15 4v16" />
+    </>
+  ),
   "i-minus": <path d="M5 12h14" />,
   "i-x": <path d="M6 6l12 12M18 6L6 18" />,
 };

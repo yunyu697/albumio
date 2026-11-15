@@ -767,7 +767,9 @@ input[type=range].lr::-moz-range-thumb{width:var(--ds-icon-xs);height:var(--ds-i
   <symbol id="i-grid" viewBox="0 0 24 24"><path d="M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z"/></symbol>
   <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></symbol>
   <symbol id="i-film" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M7 5v14M17 5v14M3 9.5h4M3 14.5h4M17 9.5h4M17 14.5h4"/></symbol>
-  <symbol id="i-expand" viewBox="0 0 24 24"><path d="M4 9V4h5M20 15v5h-5M20 9V4h-5M4 15v5h5"/></symbol>
+  <symbol id="i-maximize" viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="14" rx="2"/><path d="M4 9.5h16"/></symbol>
+  <symbol id="i-fullscreen" viewBox="0 0 24 24"><path d="M9 4H4v5M15 4h5v5M9 20H4v-5M15 20h5v-5"/></symbol>
+  <symbol id="i-panel-right" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M15 4v16"/></symbol>
   <symbol id="i-folder" viewBox="0 0 24 24"><path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z"/></symbol>
   <symbol id="i-image" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="8.5" cy="10" r="1.4"/><path d="M21 16l-5-5-4 4-2-2-5 5"/></symbol>
   <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="M20 20l-4.2-4.2"/></symbol>
@@ -791,7 +793,7 @@ input[type=range].lr::-moz-range-thumb{width:var(--ds-icon-xs);height:var(--ds-i
   <symbol id="i-tag" viewBox="0 0 24 24"><path d="M4 12.5l8-8h7.5V12l-8 8z"/><circle cx="16" cy="8" r="1.1"/></symbol>
   <symbol id="i-more" viewBox="0 0 24 24"><circle cx="5.5" cy="12" r="1.2" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.2" fill="currentColor" stroke="none"/><circle cx="18.5" cy="12" r="1.2" fill="currentColor" stroke="none"/></symbol>
   <symbol id="i-undo" viewBox="0 0 24 24"><path d="M9 7L4 12l5 5"/><path d="M4 12h9a6 6 0 010 12"/></symbol>
-  <symbol id="i-reset" viewBox="0 0 24 24"><path d="M4 12a8 8 0 102.4-5.7M4 4v5h5"/></symbol>
+  <symbol id="i-reset" viewBox="0 0 24 24"><path d="M4 12a8 8 0 0113.7-5.7M20 12a8 8 0 01-13.7 5.7"/><path d="M18 3v4h-4M6 21v-4h4"/></symbol>
   <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 4v10M8 11l4 4 4-4M5 19h14"/></symbol>
   <symbol id="i-export" viewBox="0 0 24 24"><path d="M12 15V4M8 8l4-4 4 4"/><path d="M5 14v4a2 2 0 002 2h10a2 2 0 002-2v-4"/></symbol>
   <symbol id="i-lock" viewBox="0 0 24 24"><rect x="5" y="10.5" width="14" height="9.5" rx="2"/><path d="M8.5 10.5V8a3.5 3.5 0 017 0v2.5"/></symbol>
@@ -841,7 +843,7 @@ input[type=range].lr::-moz-range-thumb{width:var(--ds-icon-xs);height:var(--ds-i
     <div class="titlebar-pad"></div>
     <div class="winbtns">
       <button class="winbtn" title="最小化"><svg class="i i-xs"><use href="#i-minus"/></svg></button>
-      <button class="winbtn" title="最大化"><svg class="i i-xs"><use href="#i-expand"/></svg></button>
+      <button class="winbtn" title="最大化"><svg class="i i-xs"><use href="#i-maximize"/></svg></button>
       <button class="winbtn close" title="关闭"><svg class="i i-xs"><use href="#i-x"/></svg></button>
     </div>
   </header>
@@ -878,7 +880,7 @@ input[type=range].lr::-moz-range-thumb{width:var(--ds-icon-xs);height:var(--ds-i
     <div class="tgroup">
       <button class="tbtn" data-goto="batch" data-tip><svg class="i i-sm"><use href="#i-layers"/></svg>批量<span class="tip">批量处理 <kbd>Ctrl E</kbd></span></button>
       <button class="tbtn" data-goto="edit" data-tip><svg class="i i-sm"><use href="#i-sliders"/></svg>编辑<span class="tip">编辑当前图片 <kbd>E</kbd></span></button>
-      <button class="ibtn" data-goto="viewer" title="全屏看图" data-tip><svg class="i"><use href="#i-expand"/></svg><span class="tip">全屏看图 <kbd>Enter</kbd></span></button>
+      <button class="ibtn" data-goto="viewer" title="全屏看图" data-tip><svg class="i"><use href="#i-fullscreen"/></svg><span class="tip">全屏看图 <kbd>Enter</kbd></span></button>
     </div>
   </div>
 
@@ -968,7 +970,7 @@ input[type=range].lr::-moz-range-thumb{width:var(--ds-icon-xs);height:var(--ds-i
 
     <aside class="inspector" id="inspector">
       <div class="rail insp-rail">
-        <button class="ibtn" title="展开检查器" data-tip><svg class="i"><use href="#i-info"/></svg><span class="tip tip-side">展开检查器 <kbd>Ctrl I</kbd></span></button>
+        <button class="ibtn" title="展开检查器" data-tip><svg class="i"><use href="#i-panel-right"/></svg><span class="tip tip-side">展开检查器 <kbd>Ctrl I</kbd></span></button>
       </div>
       <div class="insp-scroll">
         <div class="anno">检查器 · 280px · 图片信息与元数据</div>

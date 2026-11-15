@@ -44,6 +44,8 @@ jobs:
         run: node scripts/version-sync.mjs --check
       - name: 版本规则校验
         run: node scripts/check-version.mjs
+      - name: 图标一形一义校验（同一图形不得承载两个动作）
+        run: node scripts/check-icons.mjs
 
   # Rust：格式、clippy、单元与集成测试（含图像管线）
   backend:

@@ -26,7 +26,7 @@ export default function App() {
             <Icon id="i-minus" size="xs" />
           </button>
           <button className="winbtn" title="最大化">
-            <Icon id="i-expand" size="xs" />
+            <Icon id="i-maximize" size="xs" />
           </button>
           <button className="winbtn close" title="关闭">
             <Icon id="i-x" size="xs" />
@@ -102,7 +102,7 @@ export default function App() {
             </span>
           </button>
           <button className="ibtn" title="全屏看图" data-tip="">
-            <Icon id="i-expand" />
+            <Icon id="i-fullscreen" />
             <span className="tip">
               全屏看图 <kbd>Enter</kbd>
             </span>
@@ -119,7 +119,7 @@ export default function App() {
         <aside className="inspector">
           <div className="rail insp-rail">
             <button className="ibtn" title="展开检查器" data-tip="">
-              <Icon id="i-info" />
+              <Icon id="i-panel-right" />
               <span className="tip tip-side">
                 展开检查器 <kbd>Ctrl I</kbd>
               </span>
