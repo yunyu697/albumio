@@ -22,8 +22,11 @@ use std::time::{Duration, Instant};
 pub const QUIET_MS: u64 = 300;
 pub const MAX_MS: u64 = 1200;
 
-/// 单批最多攒这么多条原始事件；超过说明消费者已经跟不上，直接走整目录重建
-/// （`docs/spike/S6.md` §4：一条事件 150–250 B，5 万条约 10 MB，不能再涨）。
+/// 单批最多处理这么多条原始事件（`docs/spike/S6.md` §4.5）；剩下的留到下一批，
+/// 避免一次给 UI 推 3 万条。
+const BATCH_LIMIT: usize = 2_000;
+
+/// 积压超过这么多条就直接丢弃并走整目录重建（S6 §4.5：用 12 ms 重建换掉几十 MB）。
 const BACKLOG_LIMIT: usize = 50_000;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -350,9 +353,19 @@ fn run_loop(
                 let quiet_done = last_at.elapsed() >= cfg.quiet;
                 let hard_done = first_at.map(|t| t.elapsed() >= cfg.max).unwrap_or(true);
                 if !pending.is_empty() && (quiet_done || hard_done) {
-                    let changes = build_batch(dir, &pending);
-                    pending.clear();
-                    first_at = None;
+                    // 一批最多 2000 条；剩下的保持 pending，下一轮继续吐。
+                    let chunk: Vec<Raw> = if pending.len() > BATCH_LIMIT {
+                        pending.drain(..BATCH_LIMIT).collect()
+                    } else {
+                        std::mem::take(&mut pending)
+                    };
+                    let changes = build_batch(dir, &chunk);
+                    // 还有积压时把起点重置到现在，让剩余部分立即成下一批。
+                    first_at = if pending.is_empty() {
+                        None
+                    } else {
+                        Some(Instant::now())
+                    };
                     if !changes.is_empty() {
                         emit(changes);
                     }

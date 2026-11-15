@@ -207,6 +207,59 @@ fn rename_batch_carries_both_side_entries() {
     watcher.stop();
 }
 
+/// 验收原文：外部重命名 20 个文件，网格 1 秒内跟随。
+/// 这里卡生产参数（300 ms 静止窗口），量「第一次操作 → 20 条改名全部到齐」。
+#[test]
+fn twenty_renames_follow_within_one_second() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut old_paths = Vec::new();
+    for i in 0..20 {
+        let p = dir.path().join(format!("before_{i:02}.jpg"));
+        fs::write(&p, b"x").unwrap();
+        old_paths.push(p);
+    }
+
+    let (tx, rx) = channel();
+    let watcher = DirWatcher::start(dir.path(), Debounce::default(), move |c| {
+        let _ = tx.send(c);
+    })
+    .unwrap();
+    settle();
+
+    let started = Instant::now();
+    let mut new_paths = Vec::new();
+    for (i, old) in old_paths.iter().enumerate() {
+        let new = dir.path().join(format!("after_{i:02}.jpg"));
+        fs::rename(old, &new).unwrap();
+        new_paths.push(abs(&new));
+    }
+
+    let mut seen = std::collections::HashSet::new();
+    let deadline = started + Duration::from_secs(3);
+    while seen.len() < 20 && Instant::now() < deadline {
+        match rx.recv_timeout(Duration::from_millis(100)) {
+            Ok(c) => {
+                for r in c.renamed {
+                    seen.insert(r.to);
+                }
+            }
+            Err(RecvTimeoutError::Timeout) => continue,
+            Err(RecvTimeoutError::Disconnected) => break,
+        }
+    }
+    let elapsed = started.elapsed();
+    eprintln!("20 个改名到齐耗时 {elapsed:?}");
+    assert_eq!(seen.len(), 20, "20 条改名应全部到齐");
+    for p in &new_paths {
+        assert!(seen.contains(p), "缺少改名目标 {p}");
+    }
+    assert!(
+        elapsed < Duration::from_secs(1),
+        "20 个改名应在 1 s 内到齐，实际 {elapsed:?}"
+    );
+    watcher.stop();
+}
+
 #[test]
 fn watcher_reports_its_directory() {
     let dir = tempfile::tempdir().unwrap();
