@@ -741,6 +741,33 @@ input[type=range].lr::-moz-range-thumb{width:var(--ds-icon-xs);height:var(--ds-i
 .wbtn{width:100%;justify-content:center}
 .outpath{display:flex;align-items:center;gap:var(--ds-space-3);font-family:var(--ds-font-mono);font-size:var(--ds-font-size-10);color:var(--ds-color-text-2);background:var(--ds-color-surface-2);border-radius:var(--ds-radius-sm);padding:var(--ds-space-3)}
 
+/* —— M7 补稿：处理中 / 完成态（02-设计规范 §11.5）——
+   不弹模态：主按钮原位换成「暂停」，底栏上方出现进度条；
+   行尾状态列只在处理中/完成后出现，空闲态保持原布局不变。 */
+.b-actions{display:flex;flex-direction:column;gap:var(--ds-space-3)}
+.b-prog{height:var(--ds-space-1);background:var(--ds-color-surface-3);border-radius:var(--ds-radius-pill);overflow:hidden}
+.b-prog i{display:block;height:100%;width:0;background:var(--ds-color-accent);transition:width var(--ds-dur-4) var(--ds-ease-standard)}
+.b-row{position:relative}
+.b-row.run{background:var(--ds-color-selected)}
+.b-row.fail{box-shadow:inset 2px 0 0 var(--ds-color-danger)}
+.b-row.skip{opacity:.55}
+.b-row.fail .b-name{color:var(--ds-color-danger)}
+.b-state{
+  width:48px;flex:none;text-align:right;font-family:var(--ds-font-mono);
+  font-size:var(--ds-font-size-10);color:var(--ds-color-text-muted);display:none;
+}
+.b-rows.busy .b-state,.b-list-head.busy .b-state{display:block}
+.b-row.done .b-state{color:var(--ds-color-success)}
+.b-row.fail .b-state{color:var(--ds-color-danger)}
+.b-row.run .b-state{color:var(--ds-color-text)}
+.b-res{display:flex;flex-direction:column;gap:var(--ds-space-2);max-height:200px;overflow-y:auto}
+.res-row{display:flex;gap:var(--ds-space-3);font-size:var(--ds-font-size-10);line-height:var(--ds-leading-snug)}
+.res-row .nm{font-family:var(--ds-font-mono);color:var(--ds-color-text);flex:none;max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.res-row .rs{color:var(--ds-color-text-muted)}
+.res-row.fail .rs{color:var(--ds-color-danger)}
+.res-sum{font-family:var(--ds-font-mono);font-size:var(--ds-font-size-10);color:var(--ds-color-text-2)}
+.res-sum b{color:var(--ds-color-text);font-weight:var(--ds-font-weight-500)}
+
 @media (max-width:1100px){
   .spec-hint{display:none}
 }
@@ -1211,29 +1238,35 @@ input[type=range].lr::-moz-range-thumb{width:var(--ds-icon-xs);height:var(--ds-i
   <!-- ========== 批量处理 ========== -->
   <div class="overlay" id="ov-batch">
     <div class="b-head">
-      <button class="ibtn" data-goto="browse" title="返回"><svg class="i"><use href="#i-back"/></svg></button>
-      <div class="b-title">批量处理<span class="b-sub">已选 12 项 · 来自「京都」</span></div>
+      <button class="ibtn" id="bBack" title="返回"><svg class="i"><use href="#i-back"/></svg></button>
+      <div class="b-title">批量处理<span class="b-sub" id="bSub">已选 12 项 · 来自「京都」</span></div>
       <div class="tsep"></div>
-      <span class="b-sub">预估输出 <span class="sb-num">184 MB</span></span>
+      <span class="b-sub" id="bEta">预估输出 <span class="sb-num">184 MB</span></span>
       <div class="fb-spacer"></div>
-      <button class="btn ghost sm"><svg class="i i-sm"><use href="#i-plus"/></svg>添加文件</button>
+      <button class="btn ghost sm" id="bAdd"><svg class="i i-sm"><use href="#i-plus"/></svg>添加文件</button>
     </div>
 
     <div class="b-body">
       <div class="b-list">
-        <div class="b-list-head">
+        <div class="b-list-head" id="bHeadRow">
           <span class="cbx on"><svg class="i i-xs"><use href="#i-check"/></svg></span>
           <span class="b-name">文件名</span>
           <span class="b-dim">尺寸</span>
           <span class="b-size">大小</span>
           <span class="b-ext">格式</span>
+          <span class="b-state">状态</span>
         </div>
         <div class="b-rows" id="bRows"></div>
       </div>
 
       <aside class="b-settings">
         <div class="b-set-scroll">
-          <div class="sec">
+          <div class="sec" id="bResult" hidden>
+            <div class="sec-h"><b>处理结果</b><span class="res-sum" id="bResultSum"></span></div>
+            <div class="b-res" id="bResultList"></div>
+          </div>
+
+          <div class="sec" data-cfg>
             <div class="sec-h"><b>重命名</b><span class="switch on" data-switch></span></div>
             <div class="field-block">
               <label class="field-label">模板</label>
@@ -1243,7 +1276,7 @@ input[type=range].lr::-moz-range-thumb{width:var(--ds-icon-xs);height:var(--ds-i
             <div class="rename-preview" id="rnPreview"></div>
           </div>
 
-          <div class="sec">
+          <div class="sec" data-cfg>
             <div class="sec-h"><b>格式转换</b><span class="switch on" data-switch></span></div>
             <div class="field-block">
               <label class="field-label">目标格式</label>
@@ -1256,7 +1289,7 @@ input[type=range].lr::-moz-range-thumb{width:var(--ds-icon-xs);height:var(--ds-i
             <div class="hint">保留 EXIF；颜色统一转换为 sRGB 并嵌入 profile。</div>
           </div>
 
-          <div class="sec">
+          <div class="sec" data-cfg>
             <div class="sec-h"><b>尺寸调整</b><span class="switch on" data-switch></span></div>
             <div class="ratio-row">
               <button class="ratio">原尺寸</button>
@@ -1270,7 +1303,7 @@ input[type=range].lr::-moz-range-thumb{width:var(--ds-icon-xs);height:var(--ds-i
             </div>
           </div>
 
-          <div class="sec" style="border-bottom:0">
+          <div class="sec" data-cfg style="border-bottom:0">
             <div class="sec-h"><b>输出</b></div>
             <div class="outpath"><svg class="i i-sm"><use href="#i-folder"/></svg>D:\图片\2024\京都\导出</div>
             <div class="hint">不覆盖原图。命名冲突时自动追加 _1、_2。</div>
@@ -1278,8 +1311,12 @@ input[type=range].lr::-moz-range-thumb{width:var(--ds-icon-xs);height:var(--ds-i
         </div>
 
         <div class="b-foot">
-          <div class="b-sum"><span>12 个文件 · JPEG · 长边 2048</span><b>≈ 184 MB</b></div>
-          <button class="btn primary wbtn"><svg class="i i-sm"><use href="#i-play"/></svg>开始处理</button>
+          <div class="b-prog" id="bProg" hidden><i id="bFill"></i></div>
+          <div class="b-sum"><span id="bSumLeft">12 个文件 · JPEG · 长边 2048</span><b id="bSumRight">≈ 184 MB</b></div>
+          <div class="b-actions">
+            <button class="btn ghost wbtn" id="bRetry" hidden>重新处理失败项</button>
+            <button class="btn primary wbtn" id="bStart"><svg class="i i-sm"><use href="#i-play"/></svg>开始处理</button>
+          </div>
         </div>
       </aside>
     </div>
@@ -1776,19 +1813,162 @@ $('#ratioRow').addEventListener('click', e => {
    6. 批量处理
    ========================================================= */
 let batchSel = new Set(files.slice(0, 12).map(f => f.id));
+/* M7 补稿：处理中 / 完成态。空闲态与旧稿完全一致；开始后按行推进并给出失败原因。 */
+let bPhase = 'idle';      // idle | running | done
+let bPaused = false;
+let bQueue = [];
+let bPos = 0;
+let bRetryMode = false;
+let bTimer = null;
+const bOut = new Map();   // id -> { state: wait|run|done|skip|fail, rs }
+
+const B_STATE_TEXT = { wait:'待处理', run:'处理中', done:'完成', skip:'跳过', fail:'失败' };
+
+function bSelected(){ return files.slice(0, 14).filter(f => batchSel.has(f.id)); }
 
 function renderBatch(){
   $('#bRows').innerHTML = files.slice(0, 14).map(f => {
     const on = batchSel.has(f.id);
-    return `<div class="b-row${on ? ' on' : ''}" data-id="${f.id}">
+    const o = bOut.get(f.id);
+    const st = o?.state ?? '';
+    const cls = [on ? 'on' : '', on ? st : ''].filter(Boolean).join(' ');
+    return `<div class="b-row ${cls}" data-id="${f.id}">
       <span class="cbx${on ? ' on' : ''}"><svg class="i i-xs"><use href="#i-check"/></svg></span>
       <span class="b-name">${f.name}</span>
       <span class="b-dim">${f.w}×${f.h}</span>
       <span class="b-size">${f.size} MB</span>
       <span class="b-ext">${f.ext}</span>
+      <span class="b-state">${B_STATE_TEXT[st] ?? ''}</span>
     </div>`;
   }).join('');
+  const busy = bPhase !== 'idle';
+  $('#bRows').classList.toggle('busy', busy);
+  $('#bHeadRow').classList.toggle('busy', busy);
   renderRename();
+}
+
+function updateBatchProgress(){
+  const total = bQueue.length || 1;
+  $('#bFill').style.width = `${Math.round(bPos / total * 100)}%`;
+  const fail = [...bOut.values()].filter(v => v.state === 'fail').length;
+  const skip = [...bOut.values()].filter(v => v.state === 'skip').length;
+  $('#bSub').textContent = bPhase === 'idle'
+    ? `已选 ${batchSel.size} 项 · 来自「京都」`
+    : `正在处理 ${Math.min(bPos + 1, bQueue.length)} / ${bQueue.length}`;
+  $('#bSumLeft').textContent = bPhase === 'idle'
+    ? `${batchSel.size} 个文件 · JPEG · 长边 2048`
+    : `已完成 ${bPos} / ${bQueue.length}` + (fail ? ` · 失败 ${fail}` : '') + (skip ? ` · 跳过 ${skip}` : '');
+}
+
+function setBatchBusy(busy){
+  $('#bProg').hidden = !busy;
+  $$('[data-cfg]').forEach(s => s.style.opacity = busy ? '.55' : '');
+  $$('#ov-batch input, #ov-batch .switch, #bAdd').forEach(el => el.disabled = busy);
+}
+
+function tickBatch(){
+  if (bPhase !== 'running' || bPaused) return;
+  const f = bQueue[bPos];
+  if (!f) return finishBatch();
+  bOut.set(f.id, { state:'run' });
+  renderBatch();
+  bTimer = setTimeout(() => {
+    const n = bPos;
+    if (!bRetryMode && n === 3) bOut.set(f.id, { state:'skip', rs:'同名文件已存在，按设置跳过' });
+    else if (!bRetryMode && n === 8) bOut.set(f.id, { state:'fail', rs:'源文件不可读（0x80070003）' });
+    else bOut.set(f.id, { state:'done', rs:'JPEG · 长边 2048' });
+    bPos++;
+    updateBatchProgress();
+    renderBatch();
+    if (bPos >= bQueue.length) finishBatch();
+    else tickBatch();
+  }, 180);
+}
+
+function finishBatch(){
+  bPhase = 'done';
+  clearTimeout(bTimer);
+  const all = [...bOut.values()];
+  const fail = all.filter(v => v.state === 'fail');
+  const skip = all.filter(v => v.state === 'skip');
+  const done = all.filter(v => v.state === 'done');
+  $('#bFill').style.width = '100%';
+  $('#bSub').textContent = `已完成 · ${bQueue.length} 项`;
+  $('#bEta').textContent = '用时 00:12';
+  $('#bSumLeft').textContent = `成功 ${done.length} · 跳过 ${skip.length} · 失败 ${fail.length}`;
+  $('#bSumRight').textContent = fail.length ? '可重试失败项' : '全部完成';
+  $('#bStart').innerHTML = '完成';
+  $('#bRetry').hidden = fail.length === 0;
+  const rows = [...fail.map(v => ({ v, ok:false })), ...skip.map(v => ({ v, ok:true }))];
+  $('#bResult').hidden = false;
+  $('#bResultSum').innerHTML = `<b>${fail.length}</b> 失败 · <b>${skip.length}</b> 跳过`;
+  $('#bResultList').innerHTML = rows.length
+    ? rows.map(({ v, ok }) => {
+        const f = files.find(x => bOut.get(x.id) === v);
+        return `<div class="res-row${ok ? '' : ' fail'}"><span class="nm">${f.name}</span><span class="rs">${v.rs}</span></div>`;
+      }).join('')
+    : '<div class="res-row"><span class="rs">没有失败或跳过的文件</span></div>';
+  $$('[data-cfg]').forEach(s => s.hidden = true);
+  renderBatch();
+}
+
+function resetBatch(){
+  bPhase = 'idle';
+  bPaused = false;
+  bRetryMode = false;
+  bPos = 0;
+  bQueue = [];
+  bOut.clear();
+  clearTimeout(bTimer);
+  $('#bFill').style.width = '0';
+  $('#bStart').innerHTML = '<svg class="i i-sm"><use href="#i-play"/></svg>开始处理';
+  $('#bRetry').hidden = true;
+  $('#bResult').hidden = true;
+  $('#bEta').innerHTML = '预估输出 <span class="sb-num">184 MB</span>';
+  $('#bSumRight').textContent = '≈ 184 MB';
+  $$('[data-cfg]').forEach(s => s.hidden = false);
+  setBatchBusy(false);
+  updateBatchProgress();
+  renderBatch();
+}
+
+function startBatch(){
+  if (bPhase === 'done') return resetBatch();
+  if (bPhase === 'running'){
+    bPaused = !bPaused;
+    $('#bStart').innerHTML = bPaused ? '继续' : '暂停';
+    if (!bPaused) tickBatch();
+    return;
+  }
+  bPhase = 'running';
+  bPaused = false;
+  bRetryMode = false;
+  bPos = 0;
+  bOut.clear();
+  bQueue = bSelected();
+  $('#bStart').innerHTML = '暂停';
+  $('#bResult').hidden = true;
+  $('#bRetry').hidden = true;
+  setBatchBusy(true);
+  updateBatchProgress();
+  renderBatch();
+  tickBatch();
+}
+
+function retryBatch(){
+  bPhase = 'running';
+  bRetryMode = true;
+  bPos = 0;
+  bQueue = files.filter(f => bOut.get(f.id)?.state === 'fail');
+  bOut.clear();
+  $('#bStart').innerHTML = '暂停';
+  $('#bResult').hidden = true;
+  $('#bRetry').hidden = true;
+  $$('[data-cfg]').forEach(s => s.hidden = true);
+  setBatchBusy(true);
+  updateBatchProgress();
+  renderBatch();
+  tickBatch();
 }
 
 function renamed(name, idx){
@@ -1812,15 +1992,20 @@ function renderRename(){
 }
 
 $('#bRows').addEventListener('click', e => {
+  if (bPhase !== 'idle') return;
   const row = e.target.closest('.b-row');
   if (!row) return;
   const id = +row.dataset.id;
   batchSel.has(id) ? batchSel.delete(id) : batchSel.add(id);
   renderBatch();
+  updateBatchProgress();
 });
+$('#bStart').addEventListener('click', startBatch);
+$('#bRetry').addEventListener('click', retryBatch);
+$('#bBack').addEventListener('click', () => go('browse'));
 $('#rnPattern').addEventListener('input', renderRename);
 $('#q').addEventListener('input', e => $('#valQ').textContent = e.target.value);
-$$('[data-switch]').forEach(s => s.addEventListener('click', () => s.classList.toggle('on')));
+$$('[data-switch]').forEach(s => s.addEventListener('click', () => { if (bPhase === 'idle') s.classList.toggle('on'); }));
 
 /* =========================================================
    7. 全局：屏幕切换、主题、格宽、键盘
@@ -1839,7 +2024,10 @@ function go(screen){
     $('#eImg').src = photoSVG(f.seed, 1400, 933, 2);
     applyEdits();
   }
-  if (screen === 'batch') renderBatch();
+  if (screen === 'batch'){
+    if (bPhase === 'done') resetBatch();
+    else renderBatch();
+  }
 }
 
 $('#specTabs').addEventListener('click', e => {
