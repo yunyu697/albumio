@@ -18,6 +18,8 @@ pub mod orient;
 pub mod pipeline;
 pub mod probe;
 pub mod thumb;
+#[cfg(windows)]
+pub mod wic;
 
 pub use cache::{Cache, Level, PIPELINE_VERSION};
 pub use decode::DecodedImage;

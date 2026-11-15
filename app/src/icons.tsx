@@ -60,6 +60,44 @@ const ICONS: Record<string, ReactNode> = {
   "i-heart": <path d="M12 20s-7-4.4-7-9a4 4 0 017-2.6A4 4 0 0119 11c0 4.6-7 9-7 9z" />,
   "i-minus": <path d="M5 12h14" />,
   "i-x": <path d="M6 6l12 12M18 6L6 18" />,
+  // 屏 2（M5）：几何从 design/index.html 的 symbol 逐个复制。
+  "i-back": <path d="M19 12H5M12 19l-7-7 7-7" />,
+  "i-info": (
+    <>
+      <circle cx="12" cy="12" r="8.5" />
+      <path d="M12 11.5v5M12 8.2v.4" />
+    </>
+  ),
+  "i-zoom-in": (
+    <>
+      <circle cx="11" cy="11" r="6.5" />
+      <path d="M11 8.5v5M8.5 11h5M20 20l-4.2-4.2" />
+    </>
+  ),
+  "i-zoom-out": (
+    <>
+      <circle cx="11" cy="11" r="6.5" />
+      <path d="M8.5 11h5M20 20l-4.2-4.2" />
+    </>
+  ),
+  "i-fit": (
+    <>
+      <rect x="3" y="5" width="18" height="14" rx="2" />
+      <path d="M9 10l-2 2 2 2M15 10l2 2-2 2" />
+    </>
+  ),
+  "i-actual": (
+    <>
+      <path d="M4 8V4h4M20 16v4h-4M20 8V4h-4M4 16v4h4" />
+      <path d="M9 12h6" />
+    </>
+  ),
+  "i-film": (
+    <>
+      <rect x="3" y="5" width="18" height="14" rx="2" />
+      <path d="M7 5v14M17 5v14M3 9.5h4M3 14.5h4M17 9.5h4M17 14.5h4" />
+    </>
+  ),
 };
 
 export function IconSprite() {

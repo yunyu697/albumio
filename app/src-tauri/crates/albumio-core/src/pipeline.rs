@@ -59,7 +59,9 @@ impl Pipeline {
         let dims = image::ImageReader::open(path)
             .ok()
             .and_then(|r| r.with_guessed_format().ok())
-            .and_then(|r| r.into_dimensions().ok());
+            .and_then(|r| r.into_dimensions().ok())
+            // HEIC/AVIF/RAW 的尺寸只有平台解码器知道（WIC 读帧头，不申请像素缓冲）。
+            .or_else(|| decode::platform_dims(path, format));
         Ok(FileInfo {
             path: path.display().to_string(),
             format: format_name(format),
@@ -91,13 +93,25 @@ impl Pipeline {
             self.cache.remove(level, &key);
         }
 
-        let raw = fs::read(path)?;
-        let format = probe::probe_bytes(&raw)
+        // 判格式只需要文件头；HEIC 可能有几十 MB，不能为了探测整份读进来。
+        let mut head = [0u8; 64];
+        let n = {
+            use std::io::Read;
+            let mut f = fs::File::open(path)?;
+            f.read(&mut head)?
+        };
+        let format = probe::probe_bytes(&head[..n])
             .ok_or_else(|| Error::UnknownFormat(path.display().to_string()))?;
         let target = level.edge();
         // jpeg-decoder 会选"不小于请求值"的 DCT 档位（1/8…1），因此请求目标本身即可
         // 拿到约 2 倍目标宽的中间图，足够 Lanczos 重采样。
-        let decoded = decode::decode_bytes(&raw, format, Some(target))?;
+        // HEIC/AVIF/RAW 走 WIC：按文件解码，不把整份文件读进内存；缩放仍由本管线做。
+        let decoded = if decode::uses_platform_codec(format) {
+            decode::decode_file(path, Some(target))?
+        } else {
+            let raw = fs::read(path)?;
+            decode::decode_bytes(&raw, format, Some(target))?
+        };
 
         let rotated = matches!(decoded.orientation, 5..=8);
         let (oriented_w, oriented_h) = if rotated {

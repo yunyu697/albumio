@@ -1,9 +1,25 @@
 //! 解码：JPEG 走 zune-jpeg（全解码）/ jpeg-decoder（分数缩放解码），其余走 `image`；
-//! HEIC/AVIF/RAW 返回可判定的 Unsupported（`docs/spike/S2.md`）。
+//! Windows 上 HEIC/AVIF/RAW 走系统 WIC（`docs/spike/S2-decoders.md`），其他平台仍返回
+//! 可判定的 Unsupported。
 
 use crate::{Error, ImageFormat, Result};
 use std::io::Cursor;
 use std::path::Path;
+
+/// 这三类格式在 Windows 上交给 WIC，其余路径保持「明确不支持」。
+pub fn uses_platform_codec(format: ImageFormat) -> bool {
+    cfg!(windows) && matches!(format, ImageFormat::Heic | ImageFormat::Avif | ImageFormat::Raw)
+}
+
+/// 平台解码器能给的尺寸（WIC 读帧头，不解码像素）。非平台格式返回 `None`。
+pub fn platform_dims(path: &Path, format: ImageFormat) -> Option<(u32, u32)> {
+    #[cfg(windows)]
+    if uses_platform_codec(format) {
+        return crate::wic::dims(path);
+    }
+    let _ = (path, format);
+    None
+}
 
 #[derive(Debug)]
 pub struct DecodedImage {
@@ -60,9 +76,22 @@ pub fn decode_bytes(
 }
 
 pub fn decode_file(path: &Path, target_edge: Option<u32>) -> Result<DecodedImage> {
-    let bytes = std::fs::read(path)?;
-    let format = crate::probe::probe_bytes(&bytes)
+    // 先读 64 字节判格式：HEIC 可能是几十 MB，不能为了探测整份读进内存。
+    let mut head = [0u8; 64];
+    let n = {
+        use std::io::Read;
+        let mut f = std::fs::File::open(path)?;
+        f.read(&mut head)?
+    };
+    let format = crate::probe::probe_bytes(&head[..n])
         .ok_or_else(|| Error::UnknownFormat(path.display().to_string()))?;
+
+    #[cfg(windows)]
+    if uses_platform_codec(format) {
+        return crate::wic::decode_path(path, format, target_edge);
+    }
+
+    let bytes = std::fs::read(path)?;
     decode_bytes(&bytes, format, target_edge)
 }
 

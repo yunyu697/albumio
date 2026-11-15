@@ -111,6 +111,39 @@ export async function thumbUrl(path: string, level: "l0" | "l1"): Promise<string
   return cachePut(key, url);
 }
 
+/* ---------------- 全屏看图代理（M5） ---------------- */
+
+// L2 是 2048px 代理，单张几百 KB，内存里只留当前 + 前后各一张，
+// 翻页时旧图要能及时归还（`releasePreview`），不跟着 600 条的缩略图缓存混。
+const previewCache = new Map<string, string>();
+const PREVIEW_CACHE_MAX = 6;
+
+function cachePreview(key: string, url: string): string {
+  if (previewCache.size >= PREVIEW_CACHE_MAX) {
+    // 与缩略图一样只丢索引，等 viewer 明确归还时再 revoke。
+    const oldest = previewCache.keys().next().value;
+    if (oldest) previewCache.delete(oldest);
+  }
+  previewCache.set(key, url);
+  return url;
+}
+
+/** 归还全屏看图的 L2 代理（离开当前项 / 关闭 viewer 时调用）。 */
+export function releasePreview(path: string, url: string): void {
+  if (previewCache.get(path) === url) previewCache.delete(path);
+  if (url.startsWith("blob:")) URL.revokeObjectURL(url);
+}
+
+/** 全屏看图的 L2 代理（长边 2048，与网格的 L1 分开缓存）。 */
+export async function previewUrl(path: string): Promise<string> {
+  const hit = previewCache.get(path);
+  if (hit) return hit;
+  if (!isTauri()) return cachePreview(path, mockPreview(path));
+  const bytes = await invoke<ArrayBuffer>("albumio_thumb", { path, level: "l2" });
+  const url = URL.createObjectURL(new Blob([bytes], { type: "image/webp" }));
+  return cachePreview(path, url);
+}
+
 /* ---------------- 删除（§11.6） ---------------- */
 
 export interface DeleteFailure {
@@ -286,6 +319,25 @@ function mockThumb(path: string, size: number): string {
     `<circle cx="${size * 0.68}" cy="${size * 0.3}" r="${size * 0.06}" fill="#FFE9C4" opacity="0.85"/>` +
     `<path d="M0 ${size * 0.72} L${size * 0.35} ${size * 0.52} L${size * 0.62} ${size * 0.74} ` +
     `L${size} ${size * 0.58} L${size} ${size} L0 ${size} Z" fill="${a}" opacity="0.92"/>` +
+    `</svg>`;
+  return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
+}
+
+/** 假数据的 L2 代理：3:2 横构图，长边 2048，与真机 L2 的尺寸关系一致。 */
+function mockPreview(path: string): string {
+  const i = Number(path.match(/(\d+)/)?.[1] ?? 0);
+  const [a, b, c] = MOCK_PALETTES[i % MOCK_PALETTES.length];
+  const w = 2048;
+  const h = 1365;
+  const svg =
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}">` +
+    `<defs><linearGradient id="g" x1="0" y1="0" x2="0.35" y2="1">` +
+    `<stop offset="0" stop-color="${a}"/><stop offset="0.55" stop-color="${b}"/>` +
+    `<stop offset="1" stop-color="${c}"/></linearGradient></defs>` +
+    `<rect width="${w}" height="${h}" fill="url(#g)"/>` +
+    `<circle cx="${w * 0.7}" cy="${h * 0.26}" r="${h * 0.05}" fill="#FFE9C4" opacity="0.85"/>` +
+    `<path d="M0 ${h * 0.78} L${w * 0.3} ${h * 0.5} L${w * 0.55} ${h * 0.7} ` +
+    `L${w * 0.78} ${h * 0.46} L${w} ${h * 0.62} L${w} ${h} L0 ${h} Z" fill="${a}" opacity="0.9"/>` +
     `</svg>`;
   return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
 }

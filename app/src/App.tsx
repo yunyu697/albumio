@@ -70,6 +70,10 @@ export default function App() {
   const [view, setView] = useState<BrowseView>("folder");
   const [reloadKey, setReloadKey] = useState(0);
   const [hist, setHist] = useState<{ list: string[]; i: number }>({ list: [], i: -1 });
+  // 屏 2（M5）：viewer 挂在 Browse 里（它持有 entries/评分/收藏），App 只留
+  // 「是否打开」与「请求打开」两个信号，用来让全局键让位、接工具栏按钮。
+  const [viewerOpen, setViewerOpen] = useState(false);
+  const [viewerRequest, setViewerRequest] = useState(0);
 
   const openDir = useCallback((path: string) => {
     if (!path) return;
@@ -116,6 +120,8 @@ export default function App() {
   useEffect(() => {
     const onKeyDown = (ev: KeyboardEvent) => {
       if (isComposing(ev) || isTextInput(ev.target)) return;
+      // 全屏看图期间键位全部归 viewer（§10.3），目录导航不跟着走。
+      if (viewerOpen) return;
       if (ev.altKey && !ev.ctrlKey && !ev.metaKey && !ev.shiftKey) {
         if (ev.key === "ArrowLeft") {
           ev.preventDefault();
@@ -149,7 +155,7 @@ export default function App() {
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [back, forward, up]);
+  }, [back, forward, up, viewerOpen]);
 
   const crumbs = useMemo(() => crumbsOf(status.dir || dir), [status.dir, dir]);
   const currentExt = status.currentName?.split(".").pop()?.toUpperCase() ?? "";
@@ -305,7 +311,12 @@ export default function App() {
               编辑当前图片 <kbd>E</kbd>
             </span>
           </button>
-          <button className="ibtn" title="全屏看图" data-tip="">
+          <button
+            className="ibtn"
+            title="全屏看图"
+            data-tip=""
+            onClick={() => setViewerRequest((n) => n + 1)}
+          >
             <Icon id="i-fullscreen" />
             <span className="tip">
               全屏看图 <kbd>Enter</kbd>
@@ -331,6 +342,8 @@ export default function App() {
           cellIdx={cellIdx}
           onCellIdxChange={setCellIdx}
           onStatus={onStatus}
+          openViewerKey={viewerRequest}
+          onViewerOpen={setViewerOpen}
         />
         <aside className="inspector" hidden={!inspectorOpen}>
           <div className="rail insp-rail">

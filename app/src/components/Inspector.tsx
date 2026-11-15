@@ -70,7 +70,7 @@ function Field({
   );
 }
 
-function HistogramChart({ meta }: { meta: PhotoMeta }) {
+export function HistogramChart({ meta }: { meta: PhotoMeta }) {
   const { r, g, b, bins } = meta.histogram;
   const max = Math.max(1, ...r, ...g, ...b);
   // 三通道按 12% 叠加：同一色槽叠出约 36% 的观感，与设计稿的 .45 单层一致，

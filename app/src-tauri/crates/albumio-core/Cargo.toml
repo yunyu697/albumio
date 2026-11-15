@@ -27,6 +27,9 @@ trash = "5"
 # （std 的 read_dir 不给时间，逐条 stat 在 1.7 万条时要 1.4 s）。
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_Storage_FileSystem"] }
+# HEIC / AVIF / RAW：系统 WIC（`docs/spike/S2-decoders.md`）。windows-sys 的
+# 裸 COM vtable 写起来太容易错，这里用 0.62 的强类型绑定；它已经在依赖图里。
+windows = { version = "0.62", features = ["Win32_Foundation", "Win32_System_Com", "Win32_Graphics_Imaging"] }
 
 # 磁盘用量：statvfs（只在侧栏的用量块用，不引 sysinfo）。
 [target.'cfg(unix)'.dependencies]

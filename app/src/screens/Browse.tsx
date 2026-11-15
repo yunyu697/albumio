@@ -8,6 +8,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import ConfirmDialog from "../components/ConfirmDialog";
+import Viewer from "../components/Viewer";
 import Grid, { CELLS, type ThumbState, type TimelineGroup } from "../components/Grid";
 import Toast, { type ToastData } from "../components/Toast";
 import { formatBytes } from "../format";
@@ -55,6 +56,10 @@ interface BrowseProps {
   cellIdx: number;
   onCellIdxChange: (n: number) => void;
   onStatus: (s: GridStatus) => void;
+  /** 工具栏「全屏看图」每次点击自增；Browse 自己持有 viewer，App 只发信号。 */
+  openViewerKey: number;
+  /** viewer 打开时 App 要放掉全局键（Alt 导航等）。 */
+  onViewerOpen: (open: boolean) => void;
 }
 
 interface Range {
@@ -79,6 +84,8 @@ export default function Browse({
   cellIdx,
   onCellIdxChange,
   onStatus,
+  openViewerKey,
+  onViewerOpen,
 }: BrowseProps) {
   const [entries, setEntries] = useState<Entry[]>([]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -95,6 +102,8 @@ export default function Browse({
   const [toast, setToast] = useState<ToastData | null>(null);
   // 撤销后整目录重列一次（删除本身只做本地移除，不必重列）。
   const [reload, setReload] = useState(0);
+  // 屏 2（M5）：null = 不显示；数字是 viewer 内部的当前项下标。
+  const [viewerIndex, setViewerIndex] = useState<number | null>(null);
 
   const generationRef = useRef(0);
   const schedulerRef = useRef<StatScheduler | null>(null);
@@ -117,6 +126,7 @@ export default function Browse({
   const dialogRef = useRef<{ paths: string[]; permanent: boolean } | null>(null);
   const busyRef = useRef(false);
   const toastIdRef = useRef(0);
+  const viewerIndexRef = useRef<number | null>(null);
 
   currentRef.current = current;
   entriesRef.current = entries;
@@ -124,6 +134,7 @@ export default function Browse({
   rangeRef.current = range;
   cellIdxRef.current = cellIdx;
   dialogRef.current = dialog;
+  viewerIndexRef.current = viewerIndex;
 
   /* ---------------- 时间线与可视顺序（M3） ---------------- */
 
@@ -489,6 +500,30 @@ export default function Browse({
     });
   }, []);
 
+  /* ---------------- 屏 2：全屏看图（M5） ---------------- */
+
+  /** 打开全屏看图；给了 path 就从那张开始，否则从当前项开始。 */
+  const openViewer = useCallback((path?: string | null) => {
+    const list = viewRef.current;
+    if (list.length === 0) return;
+    const target = path ?? currentRef.current ?? list[0]?.path;
+    const i = target ? list.findIndex((e) => e.path === target) : -1;
+    setViewerIndex(i >= 0 ? i : 0);
+  }, []);
+
+  // App 的全局键（Alt 导航等）在 viewer 期间要让位；keydown 之前状态已提交。
+  useEffect(() => {
+    onViewerOpen(viewerIndex !== null);
+  }, [viewerIndex, onViewerOpen]);
+
+  // 工具栏「全屏看图」：App 只递增信号，不把网格数据往上搬。
+  const seenOpenKey = useRef(openViewerKey);
+  useEffect(() => {
+    if (openViewerKey === seenOpenKey.current) return;
+    seenOpenKey.current = openViewerKey;
+    openViewer();
+  }, [openViewerKey, openViewer]);
+
   /* ---------------- 键位（§10.2；M2 批次） ---------------- */
 
   useEffect(() => {
@@ -496,6 +531,8 @@ export default function Browse({
       if (isComposing(ev) || isTextInput(ev.target)) return;
       // 确认框打开时，网格不响应任何键（Esc / Enter 由对话框自己处理，§11.6.5）。
       if (dialogRef.current) return;
+      // 全屏看图期间键位归 viewer（§10.3），网格不抢方向键与 Esc。
+      if (viewerIndexRef.current !== null) return;
       const list = viewRef.current;
       if (list.length === 0) return;
       const idx = currentRef.current
@@ -557,7 +594,9 @@ export default function Browse({
           return;
         }
         case "Enter":
-          // 全屏看图属 M5（屏 2），M2 只保留键位入口，不虚构未设计的视图。
+          // 屏 2（M5）：Enter 从当前项打开全屏看图。
+          ev.preventDefault();
+          openViewer();
           return;
         case "-":
         case "_":
@@ -623,7 +662,7 @@ export default function Browse({
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [onCellIdxChange, pickByIndex, runDelete]);
+  }, [onCellIdxChange, pickByIndex, runDelete, openViewer]);
 
   /* ---------------- 状态栏 ---------------- */
 
@@ -728,11 +767,34 @@ export default function Browse({
             return next;
           })
         }
-        onOpen={() => {
-          /* 屏 2（M5）落地后接全屏看图 */
-        }}
+        onOpen={(path) => openViewer(path)}
         onVisibleRange={onVisibleRange}
       />
+      {viewerIndex !== null && viewEntries.length > 0 ? (
+        <Viewer
+          items={viewEntries}
+          index={Math.min(viewerIndex, viewEntries.length - 1)}
+          onIndexChange={setViewerIndex}
+          ratings={ratings}
+          favorites={favorites}
+          onRate={(path, rating) =>
+            setRatings((prev) => {
+              const next = new Map(prev);
+              next.set(path, rating);
+              return next;
+            })
+          }
+          onFavorite={(path) =>
+            setFavorites((prev) => {
+              const next = new Set(prev);
+              if (next.has(path)) next.delete(path);
+              else next.add(path);
+              return next;
+            })
+          }
+          onClose={() => setViewerIndex(null)}
+        />
+      ) : null}
       {dialogView ? (
         <ConfirmDialog
           {...dialogView}

@@ -182,8 +182,12 @@ fn other_containers_decode() {
     }
 }
 
+/// 伪造的 HEIC 头（M5 起 Windows 走 WIC）：
+/// - 非 Windows 仍是可判定的 Unsupported；
+/// - Windows 由系统解码器报格式错误。
+/// 两边都必须是 Err——界面不能拿到一张空白图还当成功。
 #[test]
-fn heic_is_reported_as_unsupported() {
+fn corrupt_heic_reports_error() {
     let tmp = tempfile::tempdir().unwrap();
     let p = Pipeline::new(tmp.path().join("thumbs")).unwrap();
     let path = tmp.path().join("fake.heic");
@@ -192,9 +196,15 @@ fn heic_is_reported_as_unsupported() {
     head[8..12].copy_from_slice(b"heic");
     fs::write(&path, &head).unwrap();
     let err = p.thumbnail(&path, Level::L1).unwrap_err();
+    #[cfg(not(windows))]
     assert!(
         matches!(err, albumio_core::Error::Unsupported { .. }),
         "{err}"
+    );
+    #[cfg(windows)]
+    assert!(
+        matches!(err, albumio_core::Error::Decode(_)),
+        "WIC 应报解码错误，实际 {err}"
     );
 }
 
