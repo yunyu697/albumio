@@ -28,14 +28,38 @@ export interface ListResult {
 export const isTauri = (): boolean =>
   typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 
-export async function defaultDir(): Promise<string> {
-  if (!isTauri()) return "mock://图片/2024/京都";
+export interface LaunchTarget {
+  /** 要打开的目录；路径不存在时为 null。 */
+  dir: string | null;
+  /** 要在看图里定位的文件（双击关联文件/拖入单个图片时）；目录目标为 null。 */
+  file: string | null;
+}
+
+/** 启动目标：命令行传入的目录或文件；没有则回退到「图片」目录（M9）。 */
+export async function launchTarget(): Promise<LaunchTarget> {
+  if (!isTauri()) return { dir: "mock://图片/2024/京都", file: null };
   try {
-    const start = await invoke<string | null>("albumio_start_dir");
-    if (start) return start;
-    return await pictureDir();
+    const t = await invoke<LaunchTarget>("albumio_launch_target");
+    if (t.dir) return t;
+    return { dir: await pictureDir(), file: null };
   } catch {
-    return "";
+    return { dir: "", file: null };
+  }
+}
+
+/** 拖放：把一个外部路径拆成「目录 + 可选文件」。 */
+export async function resolveTarget(path: string): Promise<LaunchTarget> {
+  if (!isTauri()) return { dir: "mock://图片/2024/京都", file: null };
+  return invoke<LaunchTarget>("albumio_resolve_target", { path });
+}
+
+/** 是否以管理员身份运行（Windows 管理员进程收不到 Explorer 拖放，R13）。 */
+export async function isElevated(): Promise<boolean> {
+  if (!isTauri()) return false;
+  try {
+    return await invoke<boolean>("albumio_elevated");
+  } catch {
+    return false;
   }
 }
 

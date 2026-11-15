@@ -22,8 +22,9 @@ pub struct IndexState(pub Option<Index>);
 /// 当前目录监听（屏 1 一次只看一个目录，换目录时先停旧的）。
 pub struct WatchState(pub Mutex<Option<DirWatcher>>);
 
-/// 启动时传入的目录（`albumio <dir>`）。M9 的"默认打开方式"也走这条路。
-pub struct StartDir(pub Option<String>);
+/// 启动时传入的目标（`albumio <路径>`）：目录或单个图片文件。
+/// M9 的"默认打开方式"（双击关联文件）也走这条路。
+pub struct StartTarget(pub Option<String>);
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -389,10 +390,87 @@ fn albumio_batch_cancel(state: tauri::State<BatchState>) {
     state.0.store(true, Ordering::Relaxed);
 }
 
-/// 启动目录：命令行第一个参数是存在的目录就用它，否则返回 null（前端回退到"图片"目录）。
+/// 启动/拖放目标：要打开的目录 + 要在看图里定位的文件（目录目标时为空）。
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct LaunchTarget {
+    dir: Option<String>,
+    file: Option<String>,
+}
+
+/// 目录原样打开；文件打开其父目录并定位到该文件；路径不存在则两项皆空。
+fn resolve_target(path: &Path) -> LaunchTarget {
+    if path.is_dir() {
+        return LaunchTarget {
+            dir: Some(path.to_string_lossy().into_owned()),
+            file: None,
+        };
+    }
+    if path.is_file() {
+        return LaunchTarget {
+            dir: path.parent().map(|p| p.to_string_lossy().into_owned()),
+            file: Some(path.to_string_lossy().into_owned()),
+        };
+    }
+    LaunchTarget {
+        dir: None,
+        file: None,
+    }
+}
+
+/// 启动目标：命令行第一个参数（M9 默认打开方式会以文件路径调用）。
 #[tauri::command]
-fn albumio_start_dir(start: tauri::State<StartDir>) -> Option<String> {
-    start.0.clone()
+fn albumio_launch_target(start: tauri::State<StartTarget>) -> LaunchTarget {
+    match &start.0 {
+        Some(p) => resolve_target(Path::new(p)),
+        None => LaunchTarget {
+            dir: None,
+            file: None,
+        },
+    }
+}
+
+/// 拖放共用：把外部给的一个路径变成「目录 + 可选文件」。
+#[tauri::command]
+fn albumio_resolve_target(path: String) -> LaunchTarget {
+    resolve_target(Path::new(&path))
+}
+
+/// 是否以管理员身份运行。Windows 上管理员进程收不到 Explorer 的 OLE 拖放（R13），
+/// 前端据此提示改用「打开文件」；其他平台恒为 false。
+#[tauri::command]
+fn albumio_elevated() -> bool {
+    #[cfg(target_os = "windows")]
+    {
+        use std::ffi::c_void;
+        use windows_sys::Win32::Foundation::CloseHandle;
+        use windows_sys::Win32::Security::{
+            GetTokenInformation, TokenElevation, TOKEN_ELEVATION, TOKEN_QUERY,
+        };
+        use windows_sys::Win32::System::Threading::{GetCurrentProcess, OpenProcessToken};
+
+        unsafe {
+            let mut token = std::ptr::null_mut();
+            if OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &mut token) == 0 {
+                return false;
+            }
+            let mut elevation = TOKEN_ELEVATION { TokenIsElevated: 0 };
+            let mut returned = 0u32;
+            let ok = GetTokenInformation(
+                token,
+                TokenElevation,
+                &mut elevation as *mut TOKEN_ELEVATION as *mut c_void,
+                std::mem::size_of::<TOKEN_ELEVATION>() as u32,
+                &mut returned,
+            );
+            CloseHandle(token);
+            ok != 0 && elevation.TokenIsElevated != 0
+        }
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        false
+    }
 }
 
 /* ---------------- 侧栏与时间线（04-项目计划 M3） ---------------- */
@@ -471,7 +549,8 @@ pub fn run() {
             let pipeline = Pipeline::new(dir.join("thumbs"))
                 .map_err(|e| io::Error::other(format!("缩略图缓存初始化失败：{e}")))?;
             let _ = pipeline.sweep();
-            let start = std::env::args().nth(1).filter(|p| Path::new(p).is_dir());
+            // M9：第一个参数可以是目录（`albumio <dir>`）或文件（默认打开方式）。
+            let start = std::env::args().nth(1);
             let index = match Index::open(dir.join("index.db")) {
                 Ok(idx) => Some(idx),
                 Err(e) => {
@@ -480,7 +559,7 @@ pub fn run() {
                 }
             };
             app.manage(DataDir(dir));
-            app.manage(StartDir(start));
+            app.manage(StartTarget(start));
             app.manage(pipeline);
             app.manage(Listing::new());
             app.manage(IndexState(index));
@@ -517,7 +596,9 @@ pub fn run() {
             albumio_index_status,
             albumio_delete,
             albumio_restore,
-            albumio_start_dir,
+            albumio_launch_target,
+            albumio_resolve_target,
+            albumio_elevated,
             albumio_roots,
             albumio_dirs,
             albumio_disk,

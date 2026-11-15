@@ -8,7 +8,8 @@
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "test:unit": "node --test src/data/*.test.ts",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "build:portable": "node ../scripts/portable.mjs"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.1.1",

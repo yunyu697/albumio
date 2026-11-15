@@ -49,6 +49,72 @@
     "category": "Photography",
     "shortDescription": "目录优先的图片浏览器",
     "longDescription": "Albumio 是目录优先的跨平台图片浏览器：删掉索引数据库也能正常浏览、看图、编辑与导出。",
+    "fileAssociations": [
+      {
+        "ext": ["jpg", "jpeg", "jpe"],
+        "name": "JPEG 图片",
+        "description": "JPEG 图片",
+        "role": "Viewer",
+        "rank": "Alternate",
+        "mimeType": "image/jpeg"
+      },
+      {
+        "ext": ["png"],
+        "name": "PNG 图片",
+        "description": "PNG 图片",
+        "role": "Viewer",
+        "rank": "Alternate",
+        "mimeType": "image/png"
+      },
+      {
+        "ext": ["webp"],
+        "name": "WebP 图片",
+        "description": "WebP 图片",
+        "role": "Viewer",
+        "rank": "Alternate",
+        "mimeType": "image/webp"
+      },
+      {
+        "ext": ["heic", "heif", "heics", "heifs"],
+        "name": "HEIF 图片",
+        "description": "HEIF 图片",
+        "role": "Viewer",
+        "rank": "Alternate",
+        "mimeType": "image/heic"
+      },
+      {
+        "ext": ["tif", "tiff"],
+        "name": "TIFF 图片",
+        "description": "TIFF 图片",
+        "role": "Viewer",
+        "rank": "Alternate",
+        "mimeType": "image/tiff"
+      },
+      {
+        "ext": ["bmp"],
+        "name": "BMP 图片",
+        "description": "BMP 图片",
+        "role": "Viewer",
+        "rank": "Alternate",
+        "mimeType": "image/bmp"
+      },
+      {
+        "ext": ["gif"],
+        "name": "GIF 图片",
+        "description": "GIF 图片",
+        "role": "Viewer",
+        "rank": "Alternate",
+        "mimeType": "image/gif"
+      },
+      {
+        "ext": ["avif"],
+        "name": "AVIF 图片",
+        "description": "AVIF 图片",
+        "role": "Viewer",
+        "rank": "Alternate",
+        "mimeType": "image/avif"
+      }
+    ],
     "windows": {
       "wix": {
         "version": "1.0.0.1"

@@ -1,9 +1,11 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { Icon, IconSprite } from "./icons";
 import Inspector from "./components/Inspector";
 import { Sidebar } from "./components/Sidebar";
+import Toast, { type ToastData } from "./components/Toast";
 import type { PhotoMeta } from "./data/meta";
-import { defaultDir } from "./data/source";
+import { isElevated, isTauri, launchTarget, resolveTarget } from "./data/source";
 import { formatBytes } from "./format";
 import Browse, { type BrowseView, type GridStatus } from "./screens/Browse";
 import { isComposing, isTextInput } from "./keys";
@@ -24,6 +26,9 @@ const EMPTY_STATUS: GridStatus = {
   currentSize: null,
   currentRating: null,
 };
+
+/** M9：拖放/关联进来的是不是本项目支持的图片（与 Rust 侧 read_images 的扩展名表一致）。 */
+const IMAGE_EXT = /\.(jpe?g|png|webp|heic|heif|heics|heifs|tiff?|bmp|gif|avif)$/i;
 
 /** 墙上时间：EXIF/XMP 给的是"拍摄地时间"，直接用；推断值用本机 mtime 格式化。 */
 function formatLocal(ms: number): string {
@@ -78,6 +83,15 @@ export default function App() {
   const [editorRequest, setEditorRequest] = useState(0);
   // 屏 4（M7）：批量处理同款信号。
   const [batchRequest, setBatchRequest] = useState(0);
+  // M9：双击关联文件 / 拖入图片时，要定位到看图的那一张；key 自增驱动 Browse。
+  const [openFile, setOpenFile] = useState<{ path: string; key: number } | null>(null);
+  // M9：系统级提示（管理员拖放限制、拖放解析失败）；与 Browse 的删除 Toast 同一组件。
+  const [toast, setToast] = useState<ToastData | null>(null);
+  const toastIdRef = useRef(0);
+
+  const notify = useCallback((text: string, error = false) => {
+    setToast({ id: ++toastIdRef.current, text, error });
+  }, []);
 
   const openDir = useCallback((path: string) => {
     if (!path) return;
@@ -90,9 +104,62 @@ export default function App() {
     });
   }, []);
 
+  /** 打开一个外部路径：目录直接进；文件进父目录并在看图里定位（M9 拖放/关联）。 */
+  const openPath = useCallback(
+    async (path: string) => {
+      try {
+        const t = await resolveTarget(path);
+        if (!t.dir) return;
+        openDir(t.dir);
+        if (t.file) {
+          if (!IMAGE_EXT.test(t.file)) {
+            notify("这个文件不是支持的图片格式", true);
+            return;
+          }
+          const file = t.file;
+          setOpenFile((prev) => ({ path: file, key: (prev?.key ?? 0) + 1 }));
+        }
+      } catch (e) {
+        notify(`打不开这个路径：${String(e)}`, true);
+      }
+    },
+    [openDir, notify]
+  );
+
   useEffect(() => {
-    void defaultDir().then((d) => openDir(d));
-  }, [openDir]);
+    let alive = true;
+    void launchTarget().then(async (t) => {
+      if (!alive) return;
+      if (t.dir) openDir(t.dir);
+      if (t.file) {
+        const file = t.file;
+        setOpenFile((prev) => ({ path: file, key: (prev?.key ?? 0) + 1 }));
+      }
+      // 管理员进程收不到 Explorer 的 OLE 拖放（R13）：启动时明确告知，不静默失效。
+      if (await isElevated()) {
+        if (alive) notify("以管理员身份运行：系统拖放不可用，请用「打开文件」打开图片", true);
+      }
+    });
+    return () => {
+      alive = false;
+    };
+  }, [openDir, notify]);
+
+  // 拖放打开（M9）：整个窗口接收，取第一个路径；拖入目录进目录，拖入图片进父目录并看图。
+  useEffect(() => {
+    if (!isTauri()) return;
+    let unlisten: (() => void) | undefined;
+    void getCurrentWebview()
+      .onDragDropEvent((event) => {
+        if (event.payload.type === "drop" && event.payload.paths.length > 0) {
+          void openPath(event.payload.paths[0]);
+        }
+      })
+      .then((fn) => {
+        unlisten = fn;
+      });
+    return () => unlisten?.();
+  }, [openPath]);
 
   // Browse 的状态回传每帧都可能触发；内容相同就不换引用，避免自激重渲染。
   const onStatus = useCallback((s: GridStatus) => {
@@ -361,6 +428,8 @@ export default function App() {
           openViewerKey={viewerRequest}
           openEditorKey={editorRequest}
           openBatchKey={batchRequest}
+          openFile={openFile?.path ?? null}
+          openFileKey={openFile?.key ?? 0}
           onViewerOpen={setViewerOpen}
         />
         <aside className="inspector" hidden={!inspectorOpen}>
@@ -438,6 +507,8 @@ export default function App() {
           <span>缩放 <span className="sb-num">100%</span></span>
         </div>
       </footer>
+
+      <Toast data={toast} onDone={() => setToast(null)} />
     </div>
   );
 }

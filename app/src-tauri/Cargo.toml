@@ -21,6 +21,14 @@ tauri = { version = "2", features = [] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 
+# M9：判断当前进程是否以管理员身份运行（管理员进程收不到 Explorer 的 OLE 拖放）。
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.59", features = [
+  "Win32_Foundation",
+  "Win32_Security",
+  "Win32_System_Threading",
+] }
+
 [profile.release]
 codegen-units = 1
 lto = true

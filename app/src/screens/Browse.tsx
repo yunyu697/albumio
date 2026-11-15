@@ -66,6 +66,9 @@ interface BrowseProps {
   openEditorKey: number;
   /** 工具栏「批量」同款信号（屏 4，M7）。 */
   openBatchKey: number;
+  /** M9：外部要求「在目录里打开这张」（双击关联文件 / 拖入图片）；目录列表到齐后再定位。 */
+  openFile: string | null;
+  openFileKey: number;
   /** viewer / editor / 批量处理打开时 App 要放掉全局键（Alt 导航等）。 */
   onViewerOpen: (open: boolean) => void;
 }
@@ -95,6 +98,8 @@ export default function Browse({
   openViewerKey,
   openEditorKey,
   openBatchKey,
+  openFile,
+  openFileKey,
   onViewerOpen,
 }: BrowseProps) {
   const [entries, setEntries] = useState<Entry[]>([]);
@@ -707,6 +712,22 @@ export default function Browse({
     seenOpenKey.current = openViewerKey;
     openViewer();
   }, [openViewerKey, openViewer]);
+
+  // M9：双击关联文件/拖入图片——先把目标存起来，等目录列表回来再定位，
+  // 否则换目录的那一帧里 viewEntries 还是旧目录，会退化成「打开第一张」。
+  const pendingOpenRef = useRef<string | null>(null);
+  const seenOpenFileKey = useRef(openFileKey);
+  useEffect(() => {
+    if (openFileKey !== seenOpenFileKey.current) {
+      seenOpenFileKey.current = openFileKey;
+      pendingOpenRef.current = openFile;
+    }
+    const pending = pendingOpenRef.current;
+    if (!pending) return;
+    if (!viewEntries.some((e) => e.path === pending)) return;
+    pendingOpenRef.current = null;
+    openViewer(pending);
+  }, [openFileKey, openFile, viewEntries, openViewer]);
 
   // 工具栏「编辑」：同一套信号。
   const seenEditorKey = useRef(openEditorKey);
