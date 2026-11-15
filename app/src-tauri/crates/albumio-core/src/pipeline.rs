@@ -109,8 +109,7 @@ impl Pipeline {
         let (rw, rh) = if rotated { (th, tw) } else { (tw, th) };
 
         let resized = resize_rgba(&decoded.rgba, decoded.width, decoded.height, rw, rh)?;
-        let (mut rgba, w, h) =
-            orient::apply_orientation(resized, rw, rh, decoded.orientation);
+        let (mut rgba, w, h) = orient::apply_orientation(resized, rw, rh, decoded.orientation);
         color::to_srgb(&mut rgba, decoded.icc.as_deref())?;
 
         if w > MAX_WEBVIEW_EDGE || h > MAX_WEBVIEW_EDGE {

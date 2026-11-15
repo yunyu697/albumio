@@ -49,9 +49,21 @@ mod tests {
             Y: 1.0,
         };
         let p3 = CIExyYTRIPLE {
-            Red: CIExyY { x: 0.680, y: 0.320, Y: 1.0 },
-            Green: CIExyY { x: 0.265, y: 0.690, Y: 1.0 },
-            Blue: CIExyY { x: 0.150, y: 0.060, Y: 1.0 },
+            Red: CIExyY {
+                x: 0.680,
+                y: 0.320,
+                Y: 1.0,
+            },
+            Green: CIExyY {
+                x: 0.265,
+                y: 0.690,
+                Y: 1.0,
+            },
+            Blue: CIExyY {
+                x: 0.150,
+                y: 0.060,
+                Y: 1.0,
+            },
         };
         let curve = ToneCurve::new(2.2);
         let profile = Profile::new_rgb(&d65, &p3, &[&curve, &curve, &curve]).unwrap();

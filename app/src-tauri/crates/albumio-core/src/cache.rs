@@ -85,7 +85,10 @@ impl Cache {
 
     pub fn path_for(&self, level: Level, key: &str) -> PathBuf {
         let shard = &key[..2.min(key.len())];
-        self.root.join(level.dir()).join(shard).join(format!("{key}.webp"))
+        self.root
+            .join(level.dir())
+            .join(shard)
+            .join(format!("{key}.webp"))
     }
 
     /// 命中返回字节，并把文件 mtime 刷新为"现在"当作临时 LRU 依据。
@@ -110,10 +113,7 @@ impl Cache {
             .parent()
             .ok_or_else(|| Error::Invalid("缓存路径无父目录".into()))?;
         fs::create_dir_all(dir)?;
-        let tmp = dir.join(format!(
-            ".{key}.{}.tmp",
-            std::process::id()
-        ));
+        let tmp = dir.join(format!(".{key}.{}.tmp", std::process::id()));
         {
             let mut f = fs::File::create(&tmp)?;
             f.write_all(bytes)?;
@@ -229,7 +229,11 @@ mod tests {
         let key = Cache::key_for(Path::new("C:/tmp/a.jpg"), 10, 20);
         cache.write(Level::L1, &key, b"hello").unwrap();
         assert_eq!(cache.read(Level::L1, &key).unwrap(), b"hello");
-        let dir = cache.path_for(Level::L1, &key).parent().unwrap().to_path_buf();
+        let dir = cache
+            .path_for(Level::L1, &key)
+            .parent()
+            .unwrap()
+            .to_path_buf();
         let leftovers: Vec<_> = fs::read_dir(dir)
             .unwrap()
             .flatten()

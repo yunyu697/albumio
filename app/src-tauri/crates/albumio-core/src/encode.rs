@@ -11,8 +11,8 @@ pub fn encode_lossless(rgba: &[u8], w: u32, h: u32) -> Result<Vec<u8>> {
 /// 有损 WebP，固定 q80；`use_sharp_yuv` 减少 4:2:0 色度在硬边的彩边。
 pub fn encode_q80(rgba: &[u8], w: u32, h: u32) -> Result<Vec<u8>> {
     let encoder = webp::Encoder::from_rgba(rgba, w, h);
-    let mut config = webp::WebPConfig::new()
-        .map_err(|_| Error::Encode("WebPConfig 初始化失败".into()))?;
+    let mut config =
+        webp::WebPConfig::new().map_err(|_| Error::Encode("WebPConfig 初始化失败".into()))?;
     config.quality = 80.0;
     config.use_sharp_yuv = 1;
     let out = encoder

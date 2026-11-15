@@ -76,11 +76,7 @@ fn decode_jpeg(bytes: &[u8], target_edge: Option<u32>, orientation: u8) -> Resul
 }
 
 /// 分数缩放解码（1/8、1/4、1/2、1），用于 L0/L1 与大图（`01-方案文档.md` §1.2）。
-fn decode_jpeg_scaled(
-    bytes: &[u8],
-    target_edge: u32,
-    orientation: u8,
-) -> Result<DecodedImage> {
+fn decode_jpeg_scaled(bytes: &[u8], target_edge: u32, orientation: u8) -> Result<DecodedImage> {
     use jpeg_decoder::PixelFormat as Pf;
     let mut dec = jpeg_decoder::Decoder::new(Cursor::new(bytes));
     dec.read_info().map_err(|e| Error::Decode(e.to_string()))?;

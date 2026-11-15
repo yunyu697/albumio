@@ -1,0 +1,68 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # 前端：类型检查 + 生产构建
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+      - run: npm ci
+      - name: 类型检查 + 生产构建
+        run: npm run build
+
+  # 版本规则：自测 + 版本文件一致 + 段位上限
+  version:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: 版本规则自测（11 段、进位、alpha/RC 不受限、tag 不一致等反例必须被拦）
+        run: node scripts/version-rules-test.mjs
+      - name: 版本文件一致（package.json / tauri.conf.json / Cargo.toml / MSI 版本）
+        run: node scripts/version-sync.mjs --check
+      - name: 版本规则校验
+        run: node scripts/check-version.mjs
+
+  # Rust：格式、clippy、单元与集成测试（含图像管线）
+  backend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - name: 安装 Tauri v2 Linux 系统依赖
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libssl-dev liblcms2-dev
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: app/src-tauri -> target
+      - name: 格式检查
+        run: cargo fmt --manifest-path app/src-tauri/Cargo.toml --all --check
+      - name: Clippy（仅暴露警告，不阻断）
+        run: cargo clippy --manifest-path app/src-tauri/Cargo.toml --all-targets
+      - name: 单元与集成测试
+        run: cargo test --manifest-path app/src-tauri/Cargo.toml

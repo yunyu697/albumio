@@ -142,10 +142,19 @@ fn cmyk_jpeg_converts_to_expected_rgb() {
     let red = rgba_at(&d.rgba, d.width, 10, 2);
     let cyan = rgba_at(&d.rgba, d.width, 18, 2);
     let black = rgba_at(&d.rgba, d.width, 28, 2);
-    assert!(white[0] > 240 && white[1] > 240 && white[2] > 240, "白块={white:?}");
+    assert!(
+        white[0] > 240 && white[1] > 240 && white[2] > 240,
+        "白块={white:?}"
+    );
     assert!(red[0] > 200 && red[1] < 60 && red[2] < 60, "红块={red:?}");
-    assert!(cyan[0] < 60 && cyan[1] > 200 && cyan[2] > 200, "青块={cyan:?}");
-    assert!(black[0] < 40 && black[1] < 40 && black[2] < 40, "黑块={black:?}");
+    assert!(
+        cyan[0] < 60 && cyan[1] > 200 && cyan[2] > 200,
+        "青块={cyan:?}"
+    );
+    assert!(
+        black[0] < 40 && black[1] < 40 && black[2] < 40,
+        "黑块={black:?}"
+    );
 }
 
 #[test]
@@ -183,7 +192,10 @@ fn heic_is_reported_as_unsupported() {
     head[8..12].copy_from_slice(b"heic");
     fs::write(&path, &head).unwrap();
     let err = p.thumbnail(&path, Level::L1).unwrap_err();
-    assert!(matches!(err, albumio_core::Error::Unsupported { .. }), "{err}");
+    assert!(
+        matches!(err, albumio_core::Error::Unsupported { .. }),
+        "{err}"
+    );
 }
 
 #[test]
@@ -200,7 +212,11 @@ fn perf_budget_for_l1_and_l0() {
         l0.height
     );
     assert!(l0.width.max(l0.height) == 32);
-    assert!(l0.bytes.len() < 1024, "L0 应 < 1KB，实际 {}", l0.bytes.len());
+    assert!(
+        l0.bytes.len() < 1024,
+        "L0 应 < 1KB，实际 {}",
+        l0.bytes.len()
+    );
 
     // 冷/热各测一次：首次含文件读取，第二次模拟"同一图未缓存但文件已在页缓存"。
     let l1 = p.thumbnail(&f, Level::L1).unwrap();
@@ -213,7 +229,11 @@ fn perf_budget_for_l1_and_l0() {
     );
     assert_eq!(l1.width.max(l1.height), 256);
     // 预算（01-方案文档 §3）：p50 ≤ 95ms；这里只用单次采样，给 1s 宽限避免抖动。
-    assert!(l1.elapsed_ms < 1000, "L1 耗时 {} ms 明显超预算", l1.elapsed_ms);
+    assert!(
+        l1.elapsed_ms < 1000,
+        "L1 耗时 {} ms 明显超预算",
+        l1.elapsed_ms
+    );
 }
 
 /// 打印各阶段耗时与"分数解码是否生效"，作为验收记录的数据来源。

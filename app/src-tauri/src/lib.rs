@@ -21,7 +21,9 @@ fn data_dir(app: &tauri::AppHandle) -> io::Result<PathBuf> {
 /// 探测：格式、尺寸、大小、mtime。不读像素。
 #[tauri::command]
 fn albumio_probe(pipeline: tauri::State<Pipeline>, path: String) -> Result<FileInfo, String> {
-    pipeline.probe(std::path::Path::new(&path)).map_err(|e| e.to_string())
+    pipeline
+        .probe(std::path::Path::new(&path))
+        .map_err(|e| e.to_string())
 }
 
 /// 取一级缩略图（WebP 字节）。命中缓存不解码。

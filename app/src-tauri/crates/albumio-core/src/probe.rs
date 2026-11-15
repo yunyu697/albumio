@@ -20,7 +20,11 @@ pub enum ImageFormat {
 const HEAD: usize = 32;
 
 pub fn probe_bytes(bytes: &[u8]) -> Option<ImageFormat> {
-    let b = if bytes.len() > HEAD { &bytes[..HEAD] } else { bytes };
+    let b = if bytes.len() > HEAD {
+        &bytes[..HEAD]
+    } else {
+        bytes
+    };
 
     if b.starts_with(&[0xFF, 0xD8, 0xFF]) {
         return Some(ImageFormat::Jpeg);
@@ -58,8 +62,7 @@ pub fn probe_file(path: &std::path::Path) -> crate::Result<ImageFormat> {
     let mut f = std::fs::File::open(path)?;
     let mut head = [0u8; HEAD];
     let n = f.read(&mut head)?;
-    probe_bytes(&head[..n])
-        .ok_or_else(|| crate::Error::UnknownFormat(path.display().to_string()))
+    probe_bytes(&head[..n]).ok_or_else(|| crate::Error::UnknownFormat(path.display().to_string()))
 }
 
 #[cfg(test)]
@@ -68,7 +71,10 @@ mod tests {
 
     #[test]
     fn detects_by_magic_not_extension() {
-        assert_eq!(probe_bytes(&[0xFF, 0xD8, 0xFF, 0xE0]), Some(ImageFormat::Jpeg));
+        assert_eq!(
+            probe_bytes(&[0xFF, 0xD8, 0xFF, 0xE0]),
+            Some(ImageFormat::Jpeg)
+        );
         assert_eq!(
             probe_bytes(&[0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A, 0, 0]),
             Some(ImageFormat::Png)
