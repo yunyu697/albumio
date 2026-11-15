@@ -98,6 +98,47 @@ const ICONS: Record<string, ReactNode> = {
       <path d="M7 5v14M17 5v14M3 9.5h4M3 14.5h4M17 9.5h4M17 14.5h4" />
     </>
   ),
+  // 屏 3（M6）：同样从设计稿 symbol 复制。
+  "i-crop": <path d="M6 3v13a2 2 0 002 2h13M3 6h13a2 2 0 012 2v13" />,
+  "i-rot-cw": <path d="M20 12a8 8 0 11-2.4-5.7M20 4v5h-5" />,
+  "i-rot-ccw": <path d="M4 12a8 8 0 102.4-5.7M4 4v5h5" />,
+  "i-flip": (
+    <>
+      <path d="M12 4v16" strokeDasharray="2 2" />
+      <path d="M8 7L4 12l4 5zM16 7l4 5-4 5z" />
+    </>
+  ),
+  "i-more": (
+    <>
+      <circle cx="5.5" cy="12" r="1.2" fill="currentColor" stroke="none" />
+      <circle cx="12" cy="12" r="1.2" fill="currentColor" stroke="none" />
+      <circle cx="18.5" cy="12" r="1.2" fill="currentColor" stroke="none" />
+    </>
+  ),
+  "i-undo": (
+    <>
+      <path d="M9 7L4 12l5 5" />
+      <path d="M4 12h9a6 6 0 010 12" />
+    </>
+  ),
+  "i-reset": (
+    <>
+      <path d="M4 12a8 8 0 0113.7-5.7M20 12a8 8 0 01-13.7 5.7" />
+      <path d="M18 3v4h-4M6 21v-4h4" />
+    </>
+  ),
+  "i-export": (
+    <>
+      <path d="M12 15V4M8 8l4-4 4 4" />
+      <path d="M5 14v4a2 2 0 002 2h10a2 2 0 002-2v-4" />
+    </>
+  ),
+  "i-lock": (
+    <>
+      <rect x="5" y="10.5" width="14" height="9.5" rx="2" />
+      <path d="M8.5 10.5V8a3.5 3.5 0 017 0v2.5" />
+    </>
+  ),
 };
 
 export function IconSprite() {

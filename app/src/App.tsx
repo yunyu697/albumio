@@ -74,6 +74,8 @@ export default function App() {
   // 「是否打开」与「请求打开」两个信号，用来让全局键让位、接工具栏按钮。
   const [viewerOpen, setViewerOpen] = useState(false);
   const [viewerRequest, setViewerRequest] = useState(0);
+  // 屏 3（M6）：编辑同样挂在 Browse 里，这里只发「请求打开」。
+  const [editorRequest, setEditorRequest] = useState(0);
 
   const openDir = useCallback((path: string) => {
     if (!path) return;
@@ -304,7 +306,11 @@ export default function App() {
               批量处理 <kbd>Ctrl E</kbd>
             </span>
           </button>
-          <button className="tbtn" data-tip="">
+          <button
+            className="tbtn"
+            data-tip=""
+            onClick={() => setEditorRequest((n) => n + 1)}
+          >
             <Icon id="i-sliders" size="sm" />
             编辑
             <span className="tip">
@@ -343,6 +349,7 @@ export default function App() {
           onCellIdxChange={setCellIdx}
           onStatus={onStatus}
           openViewerKey={viewerRequest}
+          openEditorKey={editorRequest}
           onViewerOpen={setViewerOpen}
         />
         <aside className="inspector" hidden={!inspectorOpen}>

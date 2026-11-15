@@ -8,6 +8,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import ConfirmDialog from "../components/ConfirmDialog";
+import Editor from "../components/Editor";
 import Viewer from "../components/Viewer";
 import Grid, { CELLS, type ThumbState, type TimelineGroup } from "../components/Grid";
 import Toast, { type ToastData } from "../components/Toast";
@@ -58,6 +59,8 @@ interface BrowseProps {
   onStatus: (s: GridStatus) => void;
   /** 工具栏「全屏看图」每次点击自增；Browse 自己持有 viewer，App 只发信号。 */
   openViewerKey: number;
+  /** 工具栏「编辑」同款信号（屏 3，M6）。 */
+  openEditorKey: number;
   /** viewer 打开时 App 要放掉全局键（Alt 导航等）。 */
   onViewerOpen: (open: boolean) => void;
 }
@@ -85,6 +88,7 @@ export default function Browse({
   onCellIdxChange,
   onStatus,
   openViewerKey,
+  openEditorKey,
   onViewerOpen,
 }: BrowseProps) {
   const [entries, setEntries] = useState<Entry[]>([]);
@@ -104,6 +108,8 @@ export default function Browse({
   const [reload, setReload] = useState(0);
   // 屏 2（M5）：null = 不显示；数字是 viewer 内部的当前项下标。
   const [viewerIndex, setViewerIndex] = useState<number | null>(null);
+  // 屏 3（M6）：编辑覆盖层。与 viewer 互斥（设计稿的「返回看图」再回来）。
+  const [editorIndex, setEditorIndex] = useState<number | null>(null);
 
   const generationRef = useRef(0);
   const schedulerRef = useRef<StatScheduler | null>(null);
@@ -127,6 +133,7 @@ export default function Browse({
   const busyRef = useRef(false);
   const toastIdRef = useRef(0);
   const viewerIndexRef = useRef<number | null>(null);
+  const editorIndexRef = useRef<number | null>(null);
 
   currentRef.current = current;
   entriesRef.current = entries;
@@ -135,6 +142,7 @@ export default function Browse({
   cellIdxRef.current = cellIdx;
   dialogRef.current = dialog;
   viewerIndexRef.current = viewerIndex;
+  editorIndexRef.current = editorIndex;
 
   /* ---------------- 时间线与可视顺序（M3） ---------------- */
 
@@ -511,10 +519,20 @@ export default function Browse({
     setViewerIndex(i >= 0 ? i : 0);
   }, []);
 
-  // App 的全局键（Alt 导航等）在 viewer 期间要让位；keydown 之前状态已提交。
+  /** 打开编辑；从看图进来时顺手退出 viewer，避免两层覆盖层抢键位。 */
+  const openEditor = useCallback((path?: string | null) => {
+    const list = viewRef.current;
+    if (list.length === 0) return;
+    const target = path ?? currentRef.current ?? list[0]?.path;
+    const i = target ? list.findIndex((e) => e.path === target) : -1;
+    setViewerIndex(null);
+    setEditorIndex(i >= 0 ? i : 0);
+  }, []);
+
+  // App 的全局键（Alt 导航等）在 viewer/editor 期间要让位；keydown 之前状态已提交。
   useEffect(() => {
-    onViewerOpen(viewerIndex !== null);
-  }, [viewerIndex, onViewerOpen]);
+    onViewerOpen(viewerIndex !== null || editorIndex !== null);
+  }, [viewerIndex, editorIndex, onViewerOpen]);
 
   // 工具栏「全屏看图」：App 只递增信号，不把网格数据往上搬。
   const seenOpenKey = useRef(openViewerKey);
@@ -524,6 +542,14 @@ export default function Browse({
     openViewer();
   }, [openViewerKey, openViewer]);
 
+  // 工具栏「编辑」：同一套信号。
+  const seenEditorKey = useRef(openEditorKey);
+  useEffect(() => {
+    if (openEditorKey === seenEditorKey.current) return;
+    seenEditorKey.current = openEditorKey;
+    openEditor();
+  }, [openEditorKey, openEditor]);
+
   /* ---------------- 键位（§10.2；M2 批次） ---------------- */
 
   useEffect(() => {
@@ -531,8 +557,8 @@ export default function Browse({
       if (isComposing(ev) || isTextInput(ev.target)) return;
       // 确认框打开时，网格不响应任何键（Esc / Enter 由对话框自己处理，§11.6.5）。
       if (dialogRef.current) return;
-      // 全屏看图期间键位归 viewer（§10.3），网格不抢方向键与 Esc。
-      if (viewerIndexRef.current !== null) return;
+      // 全屏看图/编辑期间键位归覆盖层（§10.3 / §10.4），网格不抢方向键与 Esc。
+      if (viewerIndexRef.current !== null || editorIndexRef.current !== null) return;
       const list = viewRef.current;
       if (list.length === 0) return;
       const idx = currentRef.current
@@ -792,7 +818,22 @@ export default function Browse({
               return next;
             })
           }
+          onEdit={(path) => openEditor(path)}
           onClose={() => setViewerIndex(null)}
+        />
+      ) : null}
+      {editorIndex !== null && viewEntries.length > 0 ? (
+        <Editor
+          items={viewEntries}
+          index={Math.min(editorIndex, viewEntries.length - 1)}
+          onIndexChange={setEditorIndex}
+          onBackToViewer={() => {
+            const i = editorIndexRef.current ?? 0;
+            setEditorIndex(null);
+            setViewerIndex(i);
+          }}
+          onClose={() => setEditorIndex(null)}
+          onExported={() => setReload((n) => n + 1)}
         />
       ) : null}
       {dialogView ? (

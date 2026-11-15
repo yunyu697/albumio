@@ -43,6 +43,8 @@ interface ViewerProps {
   favorites: Set<string>;
   onRate: (path: string, rating: number) => void;
   onFavorite: (path: string) => void;
+  /** 屏 3（M6）：从看图进入编辑。 */
+  onEdit: (path: string) => void;
   onClose: () => void;
 }
 
@@ -71,6 +73,7 @@ export default function Viewer({
   favorites,
   onRate,
   onFavorite,
+  onEdit,
   onClose,
 }: ViewerProps) {
   const safeIndex = clamp(index, 0, Math.max(0, items.length - 1));
@@ -506,7 +509,10 @@ export default function Viewer({
           return;
         case "e":
         case "E":
-          // 编辑属 M6；这里只接键位入口，不伪造未实现的界面。
+          // 屏 3（M6）：E 进入编辑，参数按当前项载入。
+          ev.preventDefault();
+          pinChrome();
+          onEdit(path);
           return;
         default:
           break;
@@ -532,6 +538,7 @@ export default function Viewer({
     items.length,
     nat,
     onClose,
+    onEdit,
     onFavorite,
     onRate,
     path,
@@ -594,7 +601,7 @@ export default function Viewer({
             图片信息 <kbd>I</kbd>
           </span>
         </button>
-        <button className="ibtn" title="编辑（随 M6 提供）">
+        <button className="ibtn" title="编辑 (E)" onClick={() => onEdit(item.path)}>
           <Icon id="i-sliders" />
         </button>
         <button
