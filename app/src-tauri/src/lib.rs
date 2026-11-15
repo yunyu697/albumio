@@ -159,6 +159,169 @@ fn albumio_restore(paths: Vec<String>, since: i64) -> albumio_core::ops::DeleteO
     albumio_core::ops::restore(&paths, since)
 }
 
+/* ---------------- 非破坏性编辑（04-项目计划 M6） ---------------- */
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct EditLoad {
+    /// 空字符串代表没有编辑；前端据此还原成空栈。
+    ops: String,
+    /// 原图在保存后被外部改过（大小或 mtime 变了）。
+    stale: bool,
+    /// `sidecar` / `index` / `none`，冲突时取更新时间较晚者。
+    source: String,
+    updated_at: i64,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct EditSave {
+    saved: bool,
+    warnings: Vec<String>,
+}
+
+/// 读编辑栈：sidecar 与 SQLite 各存一份，取较新的；索引被删也不丢编辑（folder-first）。
+#[tauri::command]
+fn albumio_edits_load(
+    index: tauri::State<IndexState>,
+    path: String,
+) -> Result<EditLoad, String> {
+    let p = Path::new(&path);
+    let meta = std::fs::metadata(p).map_err(|e| e.to_string())?;
+    let size = meta.len();
+    let mtime = albumio_core::cache::mtime_ns(&meta);
+
+    let sidecar = albumio_core::edit::read_sidecar(p).map_err(|e| e.to_string())?;
+    let db = match &index.0 {
+        Some(idx) => idx.edits_get(&path).map_err(|e| e.to_string())?,
+        None => None,
+    };
+
+    let sidecar_stale = sidecar
+        .as_ref()
+        .map(|s| albumio_core::edit::is_stale(s, size, mtime))
+        .unwrap_or(false);
+
+    // sidecar 更新（>=）时优先，平局也当 sidecar 为准：它跟着照片走。
+    match (sidecar, db) {
+        (Some(s), Some((ops, at))) => {
+            if s.updated_at >= at {
+                Ok(EditLoad {
+                    ops: s.stack.to_json().map_err(|e| e.to_string())?,
+                    stale: sidecar_stale,
+                    source: "sidecar".into(),
+                    updated_at: s.updated_at,
+                })
+            } else {
+                Ok(EditLoad {
+                    ops,
+                    stale: false,
+                    source: "index".into(),
+                    updated_at: at,
+                })
+            }
+        }
+        (Some(s), None) => Ok(EditLoad {
+            ops: s.stack.to_json().map_err(|e| e.to_string())?,
+            stale: sidecar_stale,
+            source: "sidecar".into(),
+            updated_at: s.updated_at,
+        }),
+        (None, Some((ops, at))) => Ok(EditLoad {
+            ops,
+            stale: false,
+            source: "index".into(),
+            updated_at: at,
+        }),
+        (None, None) => Ok(EditLoad {
+            ops: String::new(),
+            stale: false,
+            source: "none".into(),
+            updated_at: 0,
+        }),
+    }
+}
+
+/// 存编辑栈：先落 sidecar（可携带），再写索引（加速）。空栈 = 清除。
+#[tauri::command]
+fn albumio_edits_save(
+    index: tauri::State<IndexState>,
+    path: String,
+    ops: String,
+) -> Result<EditSave, String> {
+    let p = Path::new(&path);
+    let mut stack = albumio_core::edit::EditStack::parse(&ops).map_err(|e| e.to_string())?;
+
+    if stack.is_empty() {
+        albumio_core::edit::remove_sidecar(p).map_err(|e| e.to_string())?;
+        if let Some(idx) = &index.0 {
+            idx.edits_clear(&path).map_err(|e| e.to_string())?;
+        }
+        return Ok(EditSave {
+            saved: true,
+            warnings: Vec::new(),
+        });
+    }
+
+    stack.normalize().map_err(|e| e.to_string())?;
+    let meta = std::fs::metadata(p).map_err(|e| e.to_string())?;
+    let record = albumio_core::edit::SidecarRecord {
+        stack,
+        source_size: meta.len(),
+        source_mtime_ns: albumio_core::cache::mtime_ns(&meta),
+        updated_at: albumio_core::edit::now_ms(),
+    };
+
+    let mut warnings = Vec::new();
+    let mut sidecar_ok = true;
+    if let Err(e) = albumio_core::edit::write_sidecar(p, &record) {
+        sidecar_ok = false;
+        warnings.push(format!("编辑副本写入失败：{e}"));
+    }
+    let mut index_ok = false;
+    match &index.0 {
+        Some(idx) => match idx.edits_set(&path, &record.stack.to_json().map_err(|e| e.to_string())?) {
+            Ok(_) => index_ok = true,
+            Err(e) => warnings.push(format!("索引写入失败：{e}")),
+        },
+        None => warnings.push("索引不可用，编辑只存于目录副本".into()),
+    }
+    if !sidecar_ok && !index_ok {
+        return Err(warnings.join("；"));
+    }
+    Ok(EditSave {
+        saved: true,
+        warnings,
+    })
+}
+
+/// 预览：L2 代理 + apply_ops，返回 WebP 字节（不缓存，参数随时在变）。
+#[tauri::command]
+fn albumio_edit_preview(
+    pipeline: tauri::State<Pipeline>,
+    path: String,
+    ops: String,
+) -> Result<tauri::ipc::Response, String> {
+    let stack = albumio_core::edit::EditStack::parse(&ops).map_err(|e| e.to_string())?;
+    let bytes = pipeline
+        .edit_preview(Path::new(&path), &stack)
+        .map_err(|e| e.to_string())?;
+    Ok(tauri::ipc::Response::new(bytes))
+}
+
+/// 导出副本：原图全尺寸重放 apply_ops，JPEG q90，写 `原名_Albumio.jpg`。
+#[tauri::command]
+fn albumio_edit_export(
+    pipeline: tauri::State<Pipeline>,
+    path: String,
+    ops: String,
+) -> Result<albumio_core::ExportResult, String> {
+    let stack = albumio_core::edit::EditStack::parse(&ops).map_err(|e| e.to_string())?;
+    pipeline
+        .export(Path::new(&path), &stack)
+        .map_err(|e| e.to_string())
+}
+
 /// 启动目录：命令行第一个参数是存在的目录就用它，否则返回 null（前端回退到"图片"目录）。
 #[tauri::command]
 fn albumio_start_dir(start: tauri::State<StartDir>) -> Option<String> {
@@ -287,7 +450,11 @@ pub fn run() {
             albumio_roots,
             albumio_dirs,
             albumio_disk,
-            albumio_taken
+            albumio_taken,
+            albumio_edits_load,
+            albumio_edits_save,
+            albumio_edit_preview,
+            albumio_edit_export
         ])
         .run(tauri::generate_context!())
         .expect("error while running albumio");

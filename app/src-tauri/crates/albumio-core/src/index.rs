@@ -246,6 +246,34 @@ impl Index {
         Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
     }
 
+    /// 读取编辑栈（M6）。返回 `(ops_json, updated_at_ms)`。
+    pub fn edits_get(&self, path: &str) -> Result<Option<(String, i64)>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare("SELECT ops, updated_at FROM edits WHERE path = ?1")?;
+        let mut rows = stmt.query(params![path])?;
+        match rows.next()? {
+            Some(row) => Ok(Some((row.get(0)?, row.get(1)?))),
+            None => Ok(None),
+        }
+    }
+
+    pub fn edits_set(&self, path: &str, ops: &str) -> Result<i64> {
+        let conn = self.conn.lock().unwrap();
+        let now = now_ms();
+        conn.execute(
+            "INSERT INTO edits (path, ops, updated_at) VALUES (?1, ?2, ?3)
+             ON CONFLICT(path) DO UPDATE SET ops=excluded.ops, updated_at=excluded.updated_at",
+            params![path, ops, now],
+        )?;
+        Ok(now)
+    }
+
+    pub fn edits_clear(&self, path: &str) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute("DELETE FROM edits WHERE path = ?1", params![path])?;
+        Ok(())
+    }
+
     pub fn status(&self) -> Result<IndexStatus> {
         let conn = self.conn.lock().unwrap();
         let count = |table: &str| -> rusqlite::Result<u64> {
@@ -388,6 +416,25 @@ mod tests {
         assert_eq!(idx.search("京都夜行", 10).unwrap(), vec!["C:/pics/a.jpg"]);
         assert_eq!(idx.search("SONY", 10).unwrap(), vec!["C:/pics/a.jpg"]);
         assert!(idx.search("不存在的词", 10).unwrap().is_empty());
+    }
+
+    #[test]
+    fn edits_survive_reopen_and_clear() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = dir.path().join("index.db");
+        let path = "C:/pics/a.jpg";
+        {
+            let idx = Index::open(&db).unwrap();
+            assert!(idx.edits_get(path).unwrap().is_none());
+            idx.edits_set(path, r#"{"v":1,"ops":[{"op":"exposure","ev":0.5}]}"#)
+                .unwrap();
+        }
+        let idx = Index::open(&db).unwrap();
+        let (ops, at) = idx.edits_get(path).unwrap().unwrap();
+        assert!(ops.contains("\"exposure\""));
+        assert!(at > 0);
+        idx.edits_clear(path).unwrap();
+        assert!(idx.edits_get(path).unwrap().is_none());
     }
 
     #[test]

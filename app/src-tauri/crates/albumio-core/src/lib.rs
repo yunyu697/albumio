@@ -7,6 +7,7 @@
 pub mod cache;
 pub mod color;
 pub mod decode;
+pub mod edit;
 pub mod encode;
 pub mod icon;
 pub mod index;
@@ -27,7 +28,7 @@ pub use index::{Index, IndexStatus, SCHEMA_VERSION};
 pub use listing::{EntryStat, ListEntry, Listing, Priority};
 pub use meta::{Histogram, MetaSource, PhotoMeta};
 pub use orient::apply_orientation;
-pub use pipeline::{FileInfo, Pipeline, ThumbResult};
+pub use pipeline::{ExportResult, FileInfo, Pipeline, ThumbResult};
 pub use probe::ImageFormat;
 
 /// WebView 侧位图的边长硬上限（`docs/spike/S1.md`：16000 可用，20000 构造失败）。

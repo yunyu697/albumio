@@ -21,6 +21,22 @@ pub fn encode_q80(rgba: &[u8], w: u32, h: u32) -> Result<Vec<u8>> {
     Ok(out.to_vec())
 }
 
+/// JPEG q90（导出副本；`01-方案文档.md` §5.4 的默认参数）。
+pub fn encode_jpeg_q90(rgba: &[u8], w: u32, h: u32) -> Result<Vec<u8>> {
+    use image::codecs::jpeg::JpegEncoder;
+    use image::ExtendedColorType;
+    // JPEG 不支持 alpha：去掉第 4 通道（编辑不产生透明区域）。
+    let rgb: Vec<u8> = rgba
+        .chunks_exact(4)
+        .flat_map(|px| [px[0], px[1], px[2]])
+        .collect();
+    let mut out = Vec::new();
+    let mut enc = JpegEncoder::new_with_quality(&mut out, 90);
+    enc.encode(&rgb, w, h, ExtendedColorType::Rgb8)
+        .map_err(|e| Error::Encode(format!("JPEG 编码失败：{e}")))?;
+    Ok(out)
+}
+
 /// 从 WebP 头部读尺寸（不解码像素），用于缓存命中时回填宽高。
 pub fn webp_dims(bytes: &[u8]) -> Option<(u32, u32)> {
     if bytes.len() < 30 || &bytes[0..4] != b"RIFF" || &bytes[8..12] != b"WEBP" {

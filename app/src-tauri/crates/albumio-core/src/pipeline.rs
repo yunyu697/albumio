@@ -1,13 +1,14 @@
 //! 管线入口：探测 → 解码 → 方向 → sRGB → 编码 → 缓存。
 
 use crate::cache::{mtime_ns, Cache, Level};
+use crate::edit::{apply_ops, EditStack};
 use crate::encode::webp_dims;
 use crate::thumb::{fit_dims, resize_rgba};
 use crate::{color, decode, encode, orient, probe};
 use crate::{Error, ImageFormat, Result, MAX_WEBVIEW_EDGE};
 use serde::Serialize;
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::time::Instant;
 
 #[derive(Debug, Clone, Serialize)]
@@ -153,6 +154,95 @@ impl Pipeline {
     pub fn sweep(&self) -> Result<u64> {
         Ok(self.cache.sweep(Level::L1)? + self.cache.sweep(Level::L2)?)
     }
+
+    /// 编辑预览：在已转过方向、已转 sRGB 的 L2 代理上执行 `apply_ops`，返回 WebP。
+    /// 预览不重新解码原图——滑杆拖动时每秒可能请求十几次，原图解码扛不住。
+    pub fn edit_preview(&self, path: &Path, stack: &EditStack) -> Result<Vec<u8>> {
+        let l2 = self.thumbnail(path, Level::L2)?;
+        let (rgba, w, h) = decode_webp(&l2.bytes)?;
+        let out = apply_ops(rgba, w, h, stack)?;
+        encode::encode_q80(&out.rgba, out.width, out.height)
+    }
+
+    /// 编辑预览的预览尺寸（前端用来把操作映射到屏幕坐标）。
+    pub fn edit_preview_dims(&self, path: &Path) -> Result<(u32, u32)> {
+        let l2 = self.thumbnail(path, Level::L2)?;
+        Ok((l2.width, l2.height))
+    }
+
+    /// 导出副本：从原图全尺寸解码，走与预览同一段 `apply_ops`，编码 JPEG q90。
+    /// 原图只读，不覆盖（`01-方案文档.md` §5.4）。
+    pub fn export(&self, path: &Path, stack: &EditStack) -> Result<ExportResult> {
+        let meta = fs::metadata(path)?;
+        let format = probe::probe_bytes(&read_head(path, 64)?)
+            .ok_or_else(|| Error::UnknownFormat(path.display().to_string()))?;
+        let decoded = decode::decode_file(path, None)?;
+        let (mut rgba, w, h) = orient::apply_orientation(
+            decoded.rgba,
+            decoded.width,
+            decoded.height,
+            decoded.orientation,
+        );
+        color::to_srgb(&mut rgba, decoded.icc.as_deref())?;
+        let out = apply_ops(rgba, w, h, stack)?;
+        let jpeg = encode::encode_jpeg_q90(&out.rgba, out.width, out.height)?;
+        let target = export_target(path);
+        fs::write(&target, &jpeg)?;
+        Ok(ExportResult {
+            path: target.display().to_string(),
+            width: out.width,
+            height: out.height,
+            bytes: jpeg.len() as u64,
+            format: format_name(format),
+            source_size: meta.len(),
+        })
+    }
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExportResult {
+    pub path: String,
+    pub width: u32,
+    pub height: u32,
+    pub bytes: u64,
+    pub format: String,
+    /// 原图大小，前端用它证明原图未被改写。
+    pub source_size: u64,
+}
+
+/// `原名_Albumio.jpg`，同名已存在时追加 `_1`、`_2`（`01-方案文档.md` §5.4）。
+fn export_target(src: &Path) -> PathBuf {
+    let stem = src
+        .file_stem()
+        .map(|s| s.to_string_lossy().to_string())
+        .unwrap_or_else(|| "export".into());
+    let base = format!("{stem}_Albumio");
+    let mut target = src.with_file_name(format!("{base}.jpg"));
+    let mut n = 1;
+    while target.exists() {
+        target = src.with_file_name(format!("{base}_{n}.jpg"));
+        n += 1;
+    }
+    target
+}
+
+fn read_head(path: &Path, n: usize) -> Result<Vec<u8>> {
+    use std::io::Read;
+    let mut head = vec![0u8; n];
+    let mut f = fs::File::open(path)?;
+    let read = f.read(&mut head)?;
+    head.truncate(read);
+    Ok(head)
+}
+
+/// 解码已缓存/已生成的 WebP 代理（预览与导出都只拿它当输入）。
+fn decode_webp(bytes: &[u8]) -> Result<(Vec<u8>, u32, u32)> {
+    let img = image::load_from_memory_with_format(bytes, image::ImageFormat::WebP)
+        .map_err(|e| Error::Decode(format!("L2 代理解码失败：{e}")))?;
+    let rgba = img.to_rgba8();
+    let (w, h) = (rgba.width(), rgba.height());
+    Ok((rgba.into_raw(), w, h))
 }
 
 fn format_name(f: ImageFormat) -> String {

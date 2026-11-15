@@ -252,6 +252,53 @@ fn perf_budget_for_l1_and_l0() {
     );
 }
 
+/// M6 验收：预览与导出同一组参数结果一致、原图字节不变、导出不覆盖同名。
+#[test]
+fn edit_preview_and_export_agree_without_touching_original() {
+    let tmp = tempfile::tempdir().unwrap();
+    let src = tmp.path().join("sample.jpg");
+    fs::copy(fixture("orient-1.jpg"), &src).unwrap();
+    let before = fs::read(&src).unwrap();
+
+    let pipeline = Pipeline::new(tmp.path().join("cache")).unwrap();
+    let ops = r#"{"v":1,"ops":[
+        {"op":"exposure","ev":0.5},
+        {"op":"contrast","k":0.2},
+        {"op":"saturation","k":0.3},
+        {"op":"crop","rect":[0.1,0.1,0.8,0.8],"aspect":"free"}
+    ]}"#;
+    let stack = albumio_core::edit::EditStack::parse(ops).unwrap();
+
+    let preview = pipeline.edit_preview(&src, &stack).unwrap();
+    let first = pipeline.export(&src, &stack).unwrap();
+    let second = pipeline.export(&src, &stack).unwrap();
+
+    assert_eq!(before, fs::read(&src).unwrap(), "原图字节必须一个不差");
+    assert_ne!(first.path, second.path, "同名导出必须让路而不是覆盖");
+    assert!(second.path.ends_with("_Albumio_1.jpg"));
+
+    let pv = image::load_from_memory_with_format(&preview, image::ImageFormat::WebP)
+        .unwrap()
+        .to_rgba8();
+    let ex = image::load_from_memory(&fs::read(&first.path).unwrap())
+        .unwrap()
+        .to_rgba8();
+    assert_eq!((pv.width(), pv.height()), (ex.width(), ex.height()));
+    assert_eq!((first.width, first.height), (pv.width(), pv.height()));
+
+    let mut total = 0u64;
+    let mut n = 0u64;
+    for (a, b) in pv.pixels().zip(ex.pixels()) {
+        for c in 0..3 {
+            total += (a[c] as i32 - b[c] as i32).unsigned_abs() as u64;
+            n += 1;
+        }
+    }
+    let mean = total as f64 / n as f64;
+    println!("预览(WebP q80) vs 导出(JPEG q90) 平均像素差：{mean:.2}");
+    assert!(mean < 8.0, "预览与导出平均差 {mean:.2} 过大");
+}
+
 /// 打印各阶段耗时与"分数解码是否生效"，作为验收记录的数据来源。
 #[test]
 fn stage_timings_report() {
