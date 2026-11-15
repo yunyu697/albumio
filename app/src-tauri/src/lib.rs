@@ -1,12 +1,13 @@
 use albumio_core::cache::Level;
 use albumio_core::{
-    EntryStat, FileInfo, Index, IndexStatus, ListEntry, Listing, PhotoMeta, Pipeline, Priority,
+    Debounce, DirWatcher, EntryStat, FileInfo, Index, IndexStatus, ListEntry, Listing, PhotoMeta,
+    Pipeline, Priority,
 };
 use serde::Serialize;
 use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::Instant;
 use tauri::{Emitter, Manager};
 
@@ -17,6 +18,9 @@ pub struct BatchState(pub Arc<AtomicBool>);
 
 /// 索引是旁路：打不开就为 None，浏览/看图/编辑/导出一切照常（folder-first）。
 pub struct IndexState(pub Option<Index>);
+
+/// 当前目录监听（屏 1 一次只看一个目录，换目录时先停旧的）。
+pub struct WatchState(pub Mutex<Option<DirWatcher>>);
 
 /// 启动时传入的目录（`albumio <dir>`）。M9 的"默认打开方式"也走这条路。
 pub struct StartDir(pub Option<String>);
@@ -114,6 +118,31 @@ fn albumio_stat(
         stats: outcome.stats,
         elapsed_ms: t0.elapsed().as_millis(),
     })
+}
+
+/// 开始监听当前目录（非递归）。换目录时先停旧监听，避免两个目录的批次串台。
+/// 每批增量通过 `albumio://dir-changed` 推送；`overflow=true` 时前端整目录重建。
+#[tauri::command]
+fn albumio_watch_start(
+    app: tauri::AppHandle,
+    state: tauri::State<WatchState>,
+    dir: String,
+) -> Result<(), String> {
+    let mut slot = state.0.lock().map_err(|e| e.to_string())?;
+    *slot = None;
+    let watcher = DirWatcher::start(Path::new(&dir), Debounce::default(), move |changes| {
+        let _ = app.emit("albumio://dir-changed", changes);
+    })
+    .map_err(|e| e.to_string())?;
+    *slot = Some(watcher);
+    Ok(())
+}
+
+/// 停止监听：`F5` 手动刷新、切换视图或窗口关闭时调用。
+#[tauri::command]
+fn albumio_watch_stop(state: tauri::State<WatchState>) -> Result<(), String> {
+    *state.0.lock().map_err(|e| e.to_string())? = None;
+    Ok(())
 }
 
 /// 检查器数据：EXIF/XMP 合并结果 + 直方图。顺带写索引（失败只记日志，不影响返回）。
@@ -456,6 +485,7 @@ pub fn run() {
             app.manage(Listing::new());
             app.manage(IndexState(index));
             app.manage(BatchState(Arc::new(AtomicBool::new(false))));
+            app.manage(WatchState(Mutex::new(None)));
             #[cfg(target_os = "windows")]
             if let Some(window) = app.get_webview_window("main") {
                 // 启动时先按当前系统主题放一次，之后由 ThemeChanged 接管。
@@ -481,6 +511,8 @@ pub fn run() {
             albumio_thumb,
             albumio_list,
             albumio_stat,
+            albumio_watch_start,
+            albumio_watch_stop,
             albumio_meta,
             albumio_index_status,
             albumio_delete,
