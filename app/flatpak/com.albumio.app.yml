@@ -1,0 +1,54 @@
+# Flatpak 清单（04-项目计划 M9：Linux 主推 Flatpak）。
+#
+# 构建（需要 flathub 的 GNOME runtime 与 SDK 扩展，本机未验证）：
+#   flatpak install flathub org.gnome.Platform//46 org.gnome.Sdk//46 \
+#     org.freedesktop.Sdk.Extension.rust-stable org.freedesktop.Sdk.Extension.node20
+#   flatpak-builder --user --install --force-clean build-dir app/flatpak/com.albumio.app.yml
+#
+# 说明：这里从本地源码树构建（type: dir），不依赖远程 tarball；发版时若要提交 Flathub，
+# 需换成带 sha256 的 git/tar 源。WebKitGTK 由 org.gnome.Platform 运行时提供。
+app-id: com.albumio.app
+runtime: org.gnome.Platform
+runtime-version: "46"
+sdk: org.gnome.Sdk
+command: albumio
+
+sdk-extensions:
+  - org.freedesktop.Sdk.Extension.rust-stable
+  - org.freedesktop.Sdk.Extension.node20
+
+finish-args:
+  # 看图需要 GPU 加速与输入法；文件访问按"目录优先"直接给 home（不做 portal 限缩）。
+  - --share=ipc
+  - --socket=wayland
+  - --socket=fallback-x11
+  - --device=dri
+  - --filesystem=home
+  - --filesystem=/media
+  - --filesystem=/run/media
+  - --talk-name=org.freedesktop.portal.Desktop
+
+build-options:
+  append-path: /usr/lib/sdk/rust-stable/bin:/usr/lib/sdk/node20/bin
+  env:
+    CARGO_HOME: /run/build/albumio/cargo
+    npm_config_cache: /run/build/albumio/npm-cache
+
+modules:
+  - name: albumio
+    buildsystem: simple
+    build-commands:
+      - npm ci
+      - npm run tauri build -- --no-bundle
+      - install -Dm755 src-tauri/target/release/albumio /app/bin/albumio
+      - install -Dm644 flatpak/com.albumio.app.desktop /app/share/applications/com.albumio.app.desktop
+      - install -Dm644 src-tauri/icons/128x128.png /app/share/icons/hicolor/128x128/apps/com.albumio.app.png
+      - install -Dm644 "src-tauri/icons/128x128@2x.png" /app/share/icons/hicolor/256x256/apps/com.albumio.app.png
+    sources:
+      - type: dir
+        path: ..
+        skip:
+          - node_modules
+          - dist
+          - dist-portable
+          - src-tauri/target

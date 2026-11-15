@@ -137,7 +137,7 @@ export default function App() {
       }
       // 管理员进程收不到 Explorer 的 OLE 拖放（R13）：启动时明确告知，不静默失效。
       if (await isElevated()) {
-        if (alive) notify("以管理员身份运行：系统拖放不可用，请用「打开文件」打开图片", true);
+        if (alive) notify("以管理员身份运行：资源管理器拖放不可用，请从侧栏进入图片所在目录", true);
       }
     });
     return () => {

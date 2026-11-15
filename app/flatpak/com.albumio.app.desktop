@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Albumio
+Comment=目录优先的图片浏览器
+Exec=albumio %F
+Icon=com.albumio.app
+Terminal=false
+Categories=Graphics;Photography;
+StartupWMClass=albumio
+MimeType=image/jpeg;image/png;image/webp;image/heic;image/tiff;image/bmp;image/gif;image/avif;

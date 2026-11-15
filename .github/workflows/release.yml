@@ -40,6 +40,8 @@ jobs:
           - os: macos-latest
             platform: macos
             bundles: app,dmg
+            # M9：universal2 需要同时装两个 Rust target，产物才能同时跑 Intel 与 Apple Silicon。
+            build_args: --target universal-apple-darwin
           - os: ubuntu-22.04
             platform: linux
             bundles: appimage,deb
@@ -52,6 +54,11 @@ jobs:
           cache: npm
           cache-dependency-path: app/package-lock.json
       - uses: dtolnay/rust-toolchain@stable
+        if: matrix.platform != 'macos'
+      - uses: dtolnay/rust-toolchain@stable
+        if: matrix.platform == 'macos'
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
       - uses: Swatinem/rust-cache@v2
         if: matrix.platform != 'macos'
         with:
@@ -65,29 +72,57 @@ jobs:
         working-directory: app
       - name: 注入版本（package.json → tauri.conf.json / Cargo.toml）
         run: node scripts/version-sync.mjs
+      - name: 检查 Apple 签名/公证凭据（缺失只警告，不冒充已签名）
+        if: matrix.platform == 'macos'
+        shell: bash
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          missing=""
+          for k in APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD APPLE_SIGNING_IDENTITY APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID; do
+            [ -n "${!k}" ] || missing="$missing $k"
+          done
+          if [ -n "$missing" ]; then
+            echo "::warning::缺少 Apple 凭据:$missing。本次产物未签名、未公证，Gatekeeper 会拦截；补齐 Secrets 后重跑。"
+          else
+            echo "Apple 凭据齐全：tauri build 会签名并提交 notarytool 公证。"
+          fi
       - name: 构建安装包与更新包
         working-directory: app
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-        run: npm run tauri build -- --config src-tauri/tauri.release.conf.json --bundles ${{ matrix.bundles }}
+          # macOS 签名 + 公证（凭据由仓库 Secrets 提供，缺失时上面已给出警告）。
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: npm run tauri build -- --config src-tauri/tauri.release.conf.json ${{ matrix.build_args }} --bundles ${{ matrix.bundles }}
       - name: 列出产物（便于排查）
         shell: bash
-        run: find app/src-tauri/target/release/bundle -maxdepth 2 -type f | sort
+        run: find app/src-tauri/target -path '*/release/bundle/*' -type f | sort
       - name: 上传本平台产物
         uses: actions/upload-artifact@v4
         with:
           name: installers-${{ matrix.platform }}
           if-no-files-found: error
+          # universal2 产物在 target/universal-apple-darwin/release 下，用 ** 同时覆盖两种路径。
           path: |
-            app/src-tauri/target/release/bundle/msi/*.msi
-            app/src-tauri/target/release/bundle/nsis/*.exe
-            app/src-tauri/target/release/bundle/nsis/*.exe.sig
-            app/src-tauri/target/release/bundle/dmg/*.dmg
-            app/src-tauri/target/release/bundle/macos/*.tar.gz
-            app/src-tauri/target/release/bundle/macos/*.tar.gz.sig
-            app/src-tauri/target/release/bundle/appimage/*.AppImage
-            app/src-tauri/target/release/bundle/appimage/*.AppImage.sig
-            app/src-tauri/target/release/bundle/deb/*.deb
+            app/src-tauri/target/**/release/bundle/**/*.msi
+            app/src-tauri/target/**/release/bundle/**/*.exe
+            app/src-tauri/target/**/release/bundle/**/*.exe.sig
+            app/src-tauri/target/**/release/bundle/**/*.dmg
+            app/src-tauri/target/**/release/bundle/**/*.tar.gz
+            app/src-tauri/target/**/release/bundle/**/*.tar.gz.sig
+            app/src-tauri/target/**/release/bundle/**/*.AppImage
+            app/src-tauri/target/**/release/bundle/**/*.AppImage.sig
+            app/src-tauri/target/**/release/bundle/**/*.deb
 
   release:
     needs: build
