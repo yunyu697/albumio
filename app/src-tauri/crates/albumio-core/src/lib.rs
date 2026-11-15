@@ -20,6 +20,7 @@ pub mod orient;
 pub mod pipeline;
 pub mod probe;
 pub mod thumb;
+pub mod watch;
 #[cfg(windows)]
 pub mod wic;
 
@@ -32,6 +33,7 @@ pub use meta::{Histogram, MetaSource, PhotoMeta};
 pub use orient::apply_orientation;
 pub use pipeline::{ExportResult, FileInfo, Pipeline, ThumbResult};
 pub use probe::ImageFormat;
+pub use watch::{Debounce, DirChanges, DirWatcher, WatchEntry, WatchRename};
 
 /// WebView 侧位图的边长硬上限（`docs/spike/S1.md`：16000 可用，20000 构造失败）。
 pub const MAX_WEBVIEW_EDGE: u32 = 16384;

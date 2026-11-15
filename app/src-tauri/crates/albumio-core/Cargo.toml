@@ -22,6 +22,8 @@ serde = { version = "1", features = ["derive"] }
 # 移入回收站：Windows 走 IFileOperation，Linux 走 Freedesktop Trash。
 # （撤销在 Windows 上不走它的 os_limited::list，原因见 src/ops.rs。）
 trash = "5"
+# 目录监听（M8）：参数与平台差异见 `docs/spike/S6.md`，锁 8.x（9.x 还在 rc）。
+notify = "8"
 
 # 撤销要扫 `$Recycle.Bin` 下的 `$I` 记录，需要一次目录遍历就拿到文件名 + 修改时间
 # （std 的 read_dir 不给时间，逐条 stat 在 1.7 万条时要 1.4 s）。
@@ -37,4 +39,3 @@ libc = "0.2"
 
 [dev-dependencies]
 tempfile = "3"
-notify = "8"
