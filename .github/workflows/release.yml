@@ -39,7 +39,7 @@ jobs:
             bundles: nsis,msi
           - os: macos-latest
             platform: macos
-            bundles: dmg
+            bundles: app,dmg
           - os: ubuntu-22.04
             platform: linux
             bundles: appimage,deb
@@ -116,7 +116,7 @@ jobs:
           for f in dist-flat/*.msi dist-flat/*.exe dist-flat/*.dmg dist-flat/*.deb dist-flat/*.AppImage dist-flat/*.app.tar.gz; do
             [ -f "$f.sig" ] && continue
             echo "signing $f"
-            npx --yes @tauri-apps/cli@2 signer sign "$f"
+            npx --yes @tauri-apps/cli@2 signer sign --app-version "${GITHUB_REF_NAME#v}" "$f"
           done
           # 每个安装包都必须有 .sig，缺失即失败（不做"未签名照发"的降级）。
           for f in dist-flat/*.msi dist-flat/*.exe dist-flat/*.dmg dist-flat/*.deb dist-flat/*.AppImage dist-flat/*.app.tar.gz; do
