@@ -3,7 +3,7 @@ name = "albumio-core"
 version = "0.1.0"
 description = "Albumio 图像管线：探测、解码、方向、色彩、缩略图、缓存"
 edition = "2021"
-rust-version = "1.77"
+rust-version = "1.87"
 
 [dependencies]
 zune-jpeg = "0.5"
@@ -19,6 +19,19 @@ xxhash-rust = { version = "0.8", features = ["xxh3"] }
 webp = "0.3"
 thiserror = "2"
 serde = { version = "1", features = ["derive"] }
+# 移入回收站：Windows 走 IFileOperation，Linux 走 Freedesktop Trash。
+# （撤销在 Windows 上不走它的 os_limited::list，原因见 src/ops.rs。）
+trash = "5"
+
+# 撤销要扫 `$Recycle.Bin` 下的 `$I` 记录，需要一次目录遍历就拿到文件名 + 修改时间
+# （std 的 read_dir 不给时间，逐条 stat 在 1.7 万条时要 1.4 s）。
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_Storage_FileSystem"] }
+
+# 磁盘用量：statvfs（只在侧栏的用量块用，不引 sysinfo）。
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
 
 [dev-dependencies]
 tempfile = "3"
+notify = "8"

@@ -1,11 +1,13 @@
 /* 图标精灵：几何与 design/index.html 的 <symbol> 完全一致（G1）。
    新增图标时从设计稿复制 symbol，不得自己画。 */
 
-import type { ReactNode } from "react";
+import type { CSSProperties, ReactNode } from "react";
 
 const ICONS: Record<string, ReactNode> = {
   "i-chev-left": <path d="M15 18l-6-6 6-6" />,
   "i-chev-right": <path d="M9 6l6 6-6 6" />,
+  "i-chev-down": <path d="M6 9l6 6 6-6" />,
+  "i-folder": <path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z" />,
   "i-up": <path d="M12 19V5M5 12l7-7 7 7" />,
   "i-grid": <path d="M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z" />,
   "i-timeline": (
@@ -76,13 +78,18 @@ export function Icon({
   id,
   size,
   className,
+  style,
 }: {
   id: string;
   size?: "xs" | "sm" | "lg" | "xl";
   className?: string;
+  style?: CSSProperties;
 }) {
   return (
-    <svg className={["i", size ? `i-${size}` : "", className ?? ""].join(" ").trim()}>
+    <svg
+      className={["i", size ? `i-${size}` : "", className ?? ""].join(" ").trim()}
+      style={style}
+    >
       <use href={`#${id}`} />
     </svg>
   );

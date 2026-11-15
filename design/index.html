@@ -64,6 +64,7 @@
   --lv-crop-handle:var(--ds-icon-xs);
   --lv-crop-hit:var(--ds-control-h-sm);
   --lv-histogram-h:64px;
+  --lv-dialog-w:400px;         /* 二次确认对话框宽（02-设计规范 §11.6） */
   --lv-winbtn-w:46px;          /* SPEC §2.7 */
   --lv-winbtn-h:var(--ds-control-h-lg);
   --lv-rail-w:40px;            /* 折叠态图标栏宽：28 控件 + 6 内边距 ×2 */
@@ -390,6 +391,13 @@ input[type=range].lr::-moz-range-thumb{width:var(--ds-icon-xs);height:var(--ds-i
   display:flex;align-items:center;gap:var(--ds-space-3);
 }
 .tl-h em{font-style:normal;font-family:var(--ds-font-mono);font-size:var(--ds-font-size-10);opacity:.62}
+/* 分组里含"时间来自文件修改时间"的条目时，在计数右侧标推断数量（01-方案文档 §4.5） */
+.tl-tag{
+  font-family:var(--ds-font-mono);font-size:var(--ds-font-size-10);font-weight:var(--ds-font-weight-400);
+  color:var(--ds-color-text-muted);background:var(--ds-color-surface-2);
+  height:var(--ds-control-h-xs);padding:0 var(--ds-space-2);border-radius:var(--ds-radius-tag);
+  display:inline-flex;align-items:center;flex:none;
+}
 
 /* 检查器 */
 .inspector{
@@ -462,6 +470,47 @@ input[type=range].lr::-moz-range-thumb{width:var(--ds-icon-xs);height:var(--ds-i
 [data-screen="viewer"] #ov-viewer{display:flex}
 [data-screen="edit"] #ov-edit{display:flex}
 [data-screen="batch"] #ov-batch{display:flex}
+[data-screen="confirm"] #ov-confirm{display:flex}
+
+/* ================= 二次确认对话框（02-设计规范 §11.6） ================= */
+.scrim{
+  position:absolute;inset:0;z-index:50;display:none;align-items:center;justify-content:center;
+  background:var(--ds-color-overlay);
+}
+.dialog{
+  width:var(--lv-dialog-w);display:flex;flex-direction:column;gap:var(--ds-space-4);
+  padding:var(--ds-space-7);border-radius:var(--ds-radius-lg);
+  background:var(--ds-color-surface);border:var(--ds-border-hairline) solid var(--ds-color-line);
+  box-shadow:var(--ds-elevation-3);color:var(--ds-color-text);
+}
+.dlg-title{font-size:var(--ds-font-size-16);font-weight:var(--ds-font-weight-600);line-height:var(--ds-leading-tight)}
+.dlg-body{margin:0;font-size:var(--ds-font-size-13);line-height:var(--ds-leading-base);color:var(--ds-color-text-2)}
+.dlg-list{
+  display:flex;flex-direction:column;gap:var(--ds-space-1);
+  padding:var(--ds-space-3) var(--ds-space-4);border-radius:var(--ds-radius-sm);
+  background:var(--ds-color-surface-2);
+  font-family:var(--ds-font-mono);font-size:var(--ds-font-size-11);color:var(--ds-color-text-2);
+}
+.dlg-list span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dlg-note{font-size:var(--ds-font-size-11);color:var(--ds-color-text-muted)}
+.dlg-foot{display:flex;justify-content:flex-end;gap:var(--ds-space-5);margin-top:var(--ds-space-2)}
+/* 破坏性主按钮：危险色描边 + 危险弱底，不用大面积实心红（白字在 #FF6B6B 上只有 2.6:1） */
+.btn.danger{
+  background:var(--ds-color-danger-weak);color:var(--ds-color-danger);
+  border:var(--ds-border-hairline) solid var(--ds-color-danger);
+}
+.btn.danger:hover{background:var(--ds-color-danger-weak);filter:brightness(1.12)}
+/* 删除后的提示（§11.6.7）：单文件 Delete 不弹框，只有这一条 */
+.toast{
+  position:absolute;left:50%;bottom:calc(var(--lv-statusbar-h) + var(--ds-space-5));transform:translateX(-50%);
+  display:none;align-items:center;gap:var(--ds-space-5);height:var(--ds-control-h-xl);padding:0 var(--ds-space-5);
+  border-radius:var(--ds-radius-md);background:var(--ds-color-surface-3);
+  border:var(--ds-border-hairline) solid var(--ds-color-line-strong);
+  box-shadow:var(--ds-elevation-3);font-size:var(--ds-font-size-12);color:var(--ds-color-text);white-space:nowrap;
+}
+.toast-text{max-width:420px;overflow:hidden;text-overflow:ellipsis}
+.toast-act{font-weight:var(--ds-font-weight-600);color:var(--ds-color-accent)}
+[data-screen="toast"] .toast{display:flex}
 .floatbar{
   height:var(--lv-floatbar-h);display:flex;align-items:center;gap:var(--ds-space-4);
   padding:0 var(--ds-space-4);border-radius:var(--ds-radius-lg);
@@ -818,6 +867,8 @@ input[type=range].lr::-moz-range-thumb{width:var(--ds-icon-xs);height:var(--ds-i
     <button class="spec-tab" data-screen="edit">基础编辑</button>
     <button class="spec-tab" data-screen="batch">批量处理</button>
     <button class="spec-tab" data-screen="meta">信息与元数据</button>
+    <button class="spec-tab" data-screen="confirm">删除确认</button>
+    <button class="spec-tab" data-screen="toast">删除提示</button>
   </div>
   <div class="spec-right">
     <span class="spec-hint"><kbd>双击</kbd>缩略图进全屏 · <kbd>←</kbd><kbd>→</kbd>翻页 · <kbd>F</kbd>适应 · <kbd>Z</kbd>100% · <kbd>I</kbd>信息 · <kbd>E</kbd>编辑</span>
@@ -1234,6 +1285,30 @@ input[type=range].lr::-moz-range-thumb{width:var(--ds-icon-xs);height:var(--ds-i
     </div>
   </div>
 
+  <!-- ========== 二次确认：永久删除（Shift+Delete，或批量永久删除） ========== -->
+  <div class="scrim" id="ov-confirm">
+    <div class="dialog" role="alertdialog" aria-modal="true" aria-labelledby="dlgTitle" aria-describedby="dlgBody">
+      <div class="dlg-title" id="dlgTitle">永久删除 3 个项目？</div>
+      <p class="dlg-body" id="dlgBody">选中的项目将从磁盘删除，不进入系统回收站。</p>
+      <div class="dlg-list">
+        <span>DSC_0482.JPG</span>
+        <span>DSC_0483.JPG</span>
+        <span>DSC_0484.JPG</span>
+      </div>
+      <div class="dlg-note">共 25.2 MB · 此操作不可撤销</div>
+      <div class="dlg-foot">
+        <button class="btn ghost" id="dlgCancel">取消</button>
+        <button class="btn danger" id="dlgOk">永久删除</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========== 删除提示：单文件 Delete 不弹框，只有这条 Toast（可撤销） ========== -->
+  <div class="toast">
+    <span class="toast-text">已移到回收站</span>
+    <button class="toast-act" id="toastUndo">撤销</button>
+  </div>
+
 </div>
 
 <script>
@@ -1395,10 +1470,10 @@ ${detail > 1 ? `<rect width="${w}" height="${h}" filter="url(#grain${id})" opaci
 /* ---- 文件表 ---- */
 const DIMS = [[6000,4000],[4000,6000],[5472,3648],[3840,5760],[7952,5304]];
 const buckets = [
-  { label:'今天', n:8 },
-  { label:'昨天', n:9 },
-  { label:'本周', n:11 },
-  { label:'2025 年 10 月', n:14 }
+  { label:'今天', n:8, inf:0 },
+  { label:'昨天', n:9, inf:1 },
+  { label:'本周', n:11, inf:0 },
+  { label:'2025 年 10 月', n:14, inf:3 }
 ];
 
 const files = [];
@@ -1471,7 +1546,7 @@ function renderGrid(){
     gridHost.innerHTML = buckets.map(b => {
       const list = files.filter(f => f.bucket === b.label);
       return `<div class="tl-group">
-        <h3 class="tl-h">${b.label} <em>${list.length} 项</em></h3>
+        <h3 class="tl-h">${b.label} <em>${list.length} 项</em>${b.inf ? `<span class="tl-tag">推断 ${b.inf}</span>` : ''}</h3>
         <div class="grid">${list.map(tileHTML).join('')}</div>
       </div>`;
     }).join('');
@@ -1772,6 +1847,8 @@ $('#specTabs').addEventListener('click', e => {
   if (b) go(b.dataset.screen);
 });
 $$('[data-goto]').forEach(b => b.addEventListener('click', () => go(b.dataset.goto)));
+$('#dlgCancel').addEventListener('click', () => go('browse'));
+$('#dlgOk').addEventListener('click', () => go('browse'));
 
 $('#segView').addEventListener('click', e => {
   const b = e.target.closest('.seg-item');
@@ -1796,6 +1873,11 @@ document.addEventListener('keydown', e => {
   const screen = app.dataset.screen;
   const k = e.key;
   if (e.target.matches('input')) return;
+
+  if (screen === 'confirm'){
+    if (k === 'Escape' || k === 'Enter') go('browse');
+    return;
+  }
 
   if (screen === 'viewer'){
     if (k === 'ArrowRight' || k === ' '){ e.preventDefault(); vIndex = (vIndex + 1) % files.length; currentId = files[vIndex].id; paintViewer(); }

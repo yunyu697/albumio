@@ -6,27 +6,40 @@
  * 键位按 02-设计规范 §10.2，输入态与 IME 组合期一律忽略（§10.6）。
  */
 
-import { useCallback, useEffect, useRef, useState } from "react";
-import Grid, { CELLS, type ThumbState } from "../components/Grid";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import ConfirmDialog from "../components/ConfirmDialog";
+import Grid, { CELLS, type ThumbState, type TimelineGroup } from "../components/Grid";
+import Toast, { type ToastData } from "../components/Toast";
+import { formatBytes } from "../format";
 import {
   PRIORITY,
   createScheduler,
-  defaultDir,
+  deletePaths,
   listDir,
   releaseThumb,
+  restorePaths,
+  takenTimes,
   thumbUrl,
   type Entry,
   type StatRow,
 } from "../data/source";
+import { bucketize, type TakenInfo } from "../data/timeline";
 import type { StatScheduler } from "../data/scheduler";
 import { isComposing, isTextInput } from "../keys";
+
+export type BrowseView = "folder" | "timeline";
 
 export interface GridStatus {
   dir: string;
   total: number;
   selected: number;
   knownBytes: number;
+  selectedBytes: number;
+  statsKnown: number;
   statsComplete: boolean;
+  view: BrowseView;
+  /** 时间线读取拍摄时间的进度；不在时间线时 done = total。 */
+  dated: number;
   cell: number;
   currentName: string | null;
   currentPath: string | null;
@@ -35,6 +48,10 @@ export interface GridStatus {
 }
 
 interface BrowseProps {
+  dir: string;
+  view: BrowseView;
+  /** 外部触发的重列（F5、撤销删除）。 */
+  reloadKey: number;
   cellIdx: number;
   onCellIdxChange: (n: number) => void;
   onStatus: (s: GridStatus) => void;
@@ -55,15 +72,29 @@ const THUMB_L1_IDLE_MS = 120;
 // 缩略图状态只保留窗口附近的项：1 万项全留会把 blob URL 一直攥在手里。
 const THUMB_STATE_MAX = 600;
 
-export default function Browse({ cellIdx, onCellIdxChange, onStatus }: BrowseProps) {
+export default function Browse({
+  dir,
+  view,
+  reloadKey,
+  cellIdx,
+  onCellIdxChange,
+  onStatus,
+}: BrowseProps) {
   const [entries, setEntries] = useState<Entry[]>([]);
-  const [dir, setDir] = useState("");
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [current, setCurrent] = useState<string | null>(null);
   const [ratings, setRatings] = useState<Map<string, number>>(new Map());
   const [favorites, setFavorites] = useState<Set<string>>(new Set());
   const [range, setRange] = useState<Range>({ start: 0, end: 0, columns: 1, pageRows: 1 });
   const [thumbTick, setThumbTick] = useState(0);
+  // 时间线读取的拍摄时间；键是 path，值带 inferred（缺失 EXIF 时后端回退 mtime）。
+  const [taken, setTaken] = useState<Map<string, TakenInfo>>(new Map());
+  const [dated, setDated] = useState(0);
+  // 删除确认框与 Toast（§11.6）；null 表示不显示。
+  const [dialog, setDialog] = useState<{ paths: string[]; permanent: boolean } | null>(null);
+  const [toast, setToast] = useState<ToastData | null>(null);
+  // 撤销后整目录重列一次（删除本身只做本地移除，不必重列）。
+  const [reload, setReload] = useState(0);
 
   const generationRef = useRef(0);
   const schedulerRef = useRef<StatScheduler | null>(null);
@@ -78,23 +109,48 @@ export default function Browse({ cellIdx, onCellIdxChange, onStatus }: BrowsePro
   const retryRef = useRef(0);
   const currentRef = useRef<string | null>(null);
   const entriesRef = useRef<Entry[]>([]);
+  /** 可视顺序（时间线按分桶后的顺序），键盘与连选都走它。 */
+  const viewRef = useRef<Entry[]>([]);
   const selectedRef = useRef<Set<string>>(new Set());
   const rangeRef = useRef<Range>(range);
   const cellIdxRef = useRef(cellIdx);
+  const dialogRef = useRef<{ paths: string[]; permanent: boolean } | null>(null);
+  const busyRef = useRef(false);
+  const toastIdRef = useRef(0);
 
   currentRef.current = current;
   entriesRef.current = entries;
   selectedRef.current = selected;
   rangeRef.current = range;
   cellIdxRef.current = cellIdx;
+  dialogRef.current = dialog;
+
+  /* ---------------- 时间线与可视顺序（M3） ---------------- */
+
+  // 拍摄时间全部读完才切分组：边读边分组会让格子跳来跳去（01-方案文档 §4.5）。
+  const datesReady =
+    view === "timeline" && entries.length > 0 && dated >= entries.length && taken.size >= entries.length;
+
+  const groups: TimelineGroup[] | undefined = useMemo(() => {
+    if (!datesReady) return undefined;
+    return bucketize(entries, taken, Date.now()).map((b) => ({
+      key: b.key,
+      label: b.label,
+      inferred: b.inferred,
+      items: b.items.map((i) => i.entry),
+    }));
+  }, [datesReady, entries, taken]);
+
+  const viewEntries = useMemo(
+    () => (groups ? groups.flatMap((g) => g.items) : entries),
+    [groups, entries]
+  );
+
+  viewRef.current = viewEntries;
 
   if (!schedulerRef.current) schedulerRef.current = createScheduler();
 
   /* ---------------- 载入目录 ---------------- */
-
-  useEffect(() => {
-    void defaultDir().then((d) => setDir(d));
-  }, []);
 
   // 滚动活跃度：缩略图调度用它决定"现在只补 L0 还是也能补 L1"。
   useEffect(() => {
@@ -124,10 +180,13 @@ export default function Browse({ cellIdx, onCellIdxChange, onStatus }: BrowsePro
         thumbActiveL0.current = 0;
         thumbActiveL1.current = 0;
         lastScrollRef.current = 0;
+        setTaken(new Map());
+        setDated(0);
         setEntries(r.entries);
         const first = r.entries[0]?.path ?? null;
+        // 只给"当前项"不给选中：未选中时状态栏中段显示目录摘要（§9）。
         setCurrent(first);
-        setSelected(first ? new Set([first]) : new Set());
+        setSelected(new Set());
         // P2：当前目录剩余项按 100 一批排队；P0/P1 随滚动插队。
         for (let i = 0; i < r.entries.length; i += 100) {
           const chunk = r.entries.slice(i, i + 100).map((e) => e.path);
@@ -146,7 +205,38 @@ export default function Browse({ cellIdx, onCellIdxChange, onStatus }: BrowsePro
     return () => {
       alive = false;
     };
-  }, [dir]);
+  }, [dir, reload, reloadKey]);
+
+  // 时间线：按批读拍摄时间（一批 250，串行——EXIF 读取是磁盘操作，并发只会让机械盘抖动）。
+  useEffect(() => {
+    if (view !== "timeline" || entries.length === 0) return;
+    let alive = true;
+    const next = new Map<string, TakenInfo>();
+    const paths = entries.map((e) => e.path);
+    const CHUNK = 250;
+    (async () => {
+      for (let i = 0; i < paths.length; i += CHUNK) {
+        const slice = paths.slice(i, i + CHUNK);
+        try {
+          const rows = await takenTimes(slice);
+          for (const r of rows) {
+            next.set(r.path, {
+              takenAt: r.takenAt > 0 ? r.takenAt : Date.now(),
+              inferred: r.failed || r.source === "inferred",
+            });
+          }
+        } catch {
+          for (const p of slice) next.set(p, { takenAt: Date.now(), inferred: true });
+        }
+        if (!alive) return;
+        setTaken(new Map(next));
+        setDated(Math.min(paths.length, i + slice.length));
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [view, entries, reload]);
 
   const applyStats = useCallback((rows: StatRow[]) => {
     if (rows.length === 0) return;
@@ -232,13 +322,13 @@ export default function Browse({ cellIdx, onCellIdxChange, onStatus }: BrowsePro
   }, []);
 
   useEffect(() => {
-    if (entries.length === 0) return;
-    const visible = entries
+    if (viewEntries.length === 0) return;
+    const visible = viewEntries
       .slice(range.start, range.end)
       .map((e) => e.path)
       .filter((p) => !requestedRef.current.has(p));
-    const nextEnd = Math.min(entries.length, range.end + range.columns * range.pageRows);
-    const prefetch = entries
+    const nextEnd = Math.min(viewEntries.length, range.end + range.columns * range.pageRows);
+    const prefetch = viewEntries
       .slice(range.end, nextEnd)
       .map((e) => e.path)
       .filter((p) => !requestedRef.current.has(p));
@@ -256,7 +346,7 @@ export default function Browse({ cellIdx, onCellIdxChange, onStatus }: BrowsePro
     // 缩略图：先把可见区的 L0 全部排完，再排 L1（`01-方案文档.md` 分级占位）。
     // 已经滚出窗口的排队任务直接丢掉——1 万项快滚会堆出几千个陈旧任务，
     // 留着会把新进视口的格子排在它们后面。
-    const inRange = entries.slice(range.start, range.end);
+    const inRange = viewEntries.slice(range.start, range.end);
     const wanted = new Set(inRange.map((e) => e.path));
     thumbQueue.current = thumbQueue.current.filter((j) => wanted.has(j.path));
     for (const level of ["l0", "l1"] as const) {
@@ -271,13 +361,14 @@ export default function Browse({ cellIdx, onCellIdxChange, onStatus }: BrowsePro
     }
     pruneThumbs(wanted);
     pumpThumbs();
-  }, [entries, range, applyStats, pruneThumbs, pumpThumbs]);
+  }, [viewEntries, range, applyStats, pruneThumbs, pumpThumbs]);
 
   /* ---------------- 选择 ---------------- */
 
   const pick = useCallback(
     (path: string, opts: { additive: boolean; range: boolean }) => {
-      const list = entriesRef.current;
+      // 连选范围按可视顺序（时间线就是分桶后的顺序），与用户看到的排列一致。
+      const list = viewRef.current;
       const idx = list.findIndex((e) => e.path === path);
       const anchorIdx = currentRef.current
         ? list.findIndex((e) => e.path === currentRef.current)
@@ -303,7 +394,7 @@ export default function Browse({ cellIdx, onCellIdxChange, onStatus }: BrowsePro
 
   const pickByIndex = useCallback(
     (index: number, opts: { additive?: boolean; range?: boolean } = {}) => {
-      const list = entriesRef.current;
+      const list = viewRef.current;
       if (list.length === 0) return;
       const i = Math.max(0, Math.min(list.length - 1, index));
       pick(list[i].path, { additive: !!opts.additive, range: !!opts.range });
@@ -311,12 +402,101 @@ export default function Browse({ cellIdx, onCellIdxChange, onStatus }: BrowsePro
     [pick]
   );
 
+  /* ---------------- 删除（§11.6） ---------------- */
+
+  const showToast = useCallback((data: Omit<ToastData, "id">) => {
+    setToast({ ...data, id: ++toastIdRef.current });
+  }, []);
+
+  /** 从网格、统计与选中集里移除已删除的条目，并把当前项顺延到下一个。 */
+  const applyRemoved = useCallback((paths: string[]) => {
+    const gone = new Set(paths);
+    const list = entriesRef.current;
+    const firstGone = list.findIndex((e) => gone.has(e.path));
+    for (const p of paths) {
+      const st = thumbState.current.get(p);
+      if (st?.l0) releaseThumb(p, "l0", st.l0);
+      if (st?.l1) releaseThumb(p, "l1", st.l1);
+      thumbState.current.delete(p);
+      statsRef.current.delete(p);
+      requestedRef.current.delete(p);
+    }
+    const rest = list.filter((e) => !gone.has(e.path));
+    setEntries(rest);
+    setSelected((prev) => {
+      const next = new Set(prev);
+      for (const p of paths) next.delete(p);
+      return next;
+    });
+    setCurrent((cur) => {
+      if (!cur || !gone.has(cur)) return cur;
+      const next = rest[Math.min(Math.max(firstGone, 0), rest.length - 1)];
+      return next?.path ?? null;
+    });
+    setThumbTick((t) => t + 1);
+  }, []);
+
+  const undoTrash = useCallback(
+    async (paths: string[], since: number) => {
+      try {
+        const out = await restorePaths(paths, since);
+        if (out.failed.length) {
+          showToast({ text: `撤销失败：${out.failed[0].reason}`, error: true });
+          return;
+        }
+        setReload((n) => n + 1);
+      } catch (e) {
+        showToast({ text: `撤销失败：${String(e)}`, error: true });
+      }
+    },
+    [showToast]
+  );
+
+  const runDelete = useCallback(
+    async (paths: string[], permanent: boolean) => {
+      if (busyRef.current || paths.length === 0) return;
+      busyRef.current = true;
+      try {
+        const out = await deletePaths(paths, permanent);
+        if (out.deleted.length) applyRemoved(out.deleted);
+        if (out.failed.length) {
+          // 部分失败必须说出来：用户以为删掉了、实际还在，比直接报错更糟。
+          showToast({
+            text: `${out.failed.length} 个项目删除失败：${out.failed[0].reason}`,
+            error: true,
+          });
+        } else if (!permanent && out.canUndo) {
+          showToast({
+            text: "已移到回收站",
+            action: { label: "撤销", run: () => void undoTrash(out.deleted, out.at) },
+          });
+        }
+      } catch (e) {
+        showToast({ text: `删除失败：${String(e)}`, error: true });
+      } finally {
+        busyRef.current = false;
+      }
+    },
+    [applyRemoved, showToast, undoTrash]
+  );
+
+  /** 关闭确认框后把焦点还给网格当前项所在区域（§11.6.5）。 */
+  const closeDialog = useCallback((then?: () => void) => {
+    setDialog(null);
+    then?.();
+    requestAnimationFrame(() => {
+      (document.querySelector(".stage") as HTMLElement | null)?.focus();
+    });
+  }, []);
+
   /* ---------------- 键位（§10.2；M2 批次） ---------------- */
 
   useEffect(() => {
     const onKeyDown = (ev: KeyboardEvent) => {
       if (isComposing(ev) || isTextInput(ev.target)) return;
-      const list = entriesRef.current;
+      // 确认框打开时，网格不响应任何键（Esc / Enter 由对话框自己处理，§11.6.5）。
+      if (dialogRef.current) return;
+      const list = viewRef.current;
       if (list.length === 0) return;
       const idx = currentRef.current
         ? list.findIndex((e) => e.path === currentRef.current)
@@ -360,6 +540,22 @@ export default function Browse({ cellIdx, onCellIdxChange, onStatus }: BrowsePro
         case "Escape":
           setSelected(new Set());
           return;
+        case "Delete": {
+          // 单文件 Delete 直接进回收站（不弹框）；Shift+Delete 与多选才二次确认（§11.6.1）。
+          const targets = selectedRef.current.size
+            ? [...selectedRef.current]
+            : currentRef.current
+              ? [currentRef.current]
+              : [];
+          if (targets.length === 0) return;
+          ev.preventDefault();
+          if (!ev.shiftKey && targets.length === 1) {
+            void runDelete(targets, false);
+            return;
+          }
+          setDialog({ paths: targets, permanent: ev.shiftKey });
+          return;
+        }
         case "Enter":
           // 全屏看图属 M5（屏 2），M2 只保留键位入口，不虚构未设计的视图。
           return;
@@ -427,7 +623,7 @@ export default function Browse({ cellIdx, onCellIdxChange, onStatus }: BrowsePro
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [onCellIdxChange, pickByIndex]);
+  }, [onCellIdxChange, pickByIndex, runDelete]);
 
   /* ---------------- 状态栏 ---------------- */
 
@@ -435,49 +631,121 @@ export default function Browse({ cellIdx, onCellIdxChange, onStatus }: BrowsePro
     const total = entries.length;
     const known = statsRef.current.size;
     const currentEntry = current ? entries.find((e) => e.path === current) : undefined;
+    let selectedBytes = 0;
+    for (const p of selected) selectedBytes += statsRef.current.get(p)?.size ?? 0;
     onStatus({
       dir,
       total,
       selected: selected.size,
       knownBytes: [...statsRef.current.values()].reduce((s, r) => s + r.size, 0),
+      selectedBytes,
+      statsKnown: known,
       statsComplete: total > 0 && known >= total,
+      view,
+      dated: view === "timeline" ? dated : total,
       cell: CELLS[cellIdx - 1],
       currentName: currentEntry?.name ?? null,
       currentPath: current,
       currentSize: current ? statsRef.current.get(current)?.size ?? null : null,
       currentRating: current ? ratings.get(current) ?? null : null,
     });
-  }, [entries, selected, cellIdx, dir, current, ratings, onStatus, thumbTick]);
+  }, [
+    entries,
+    selected,
+    cellIdx,
+    dir,
+    current,
+    ratings,
+    onStatus,
+    thumbTick,
+    view,
+    dated,
+  ]);
+
+  /* ---------------- 确认框文案（§11.6.3） ---------------- */
+
+  const dialogView = (() => {
+    if (!dialog) return null;
+    const n = dialog.paths.length;
+    const names = dialog.paths.map((p) => p.split(/[\\/]/).pop() ?? p);
+    const sum = dialog.paths.reduce((s, p) => s + (statsRef.current.get(p)?.size ?? 0), 0);
+    const size = sum > 0 ? formatBytes(sum) : "";
+    if (dialog.permanent) {
+      if (n === 1) {
+        return {
+          title: `永久删除 ${names[0]}？`,
+          body: "此文件将从磁盘删除，不进入系统回收站。",
+          names: [],
+          note: size ? `${size} · 此操作不可撤销` : "此操作不可撤销",
+          confirmLabel: "永久删除",
+          danger: true,
+        };
+      }
+      return {
+        title: `永久删除 ${n} 个项目？`,
+        body: "选中的项目将从磁盘删除，不进入系统回收站。",
+        names,
+        note: size ? `共 ${size} · 此操作不可撤销` : "此操作不可撤销",
+        confirmLabel: "永久删除",
+        danger: true,
+      };
+    }
+    return {
+      title: `将 ${n} 个项目移到回收站？`,
+      body: "可以稍后从系统回收站还原。",
+      names,
+      note: size ? `共 ${size}` : "",
+      confirmLabel: "移到回收站",
+      danger: false,
+    };
+  })();
 
   return (
-    <Grid
-      items={entries}
-      cellIdx={cellIdx}
-      selected={selected}
-      current={current}
-      thumbs={thumbState.current}
-      ratings={ratings}
-      favorites={favorites}
-      onPick={pick}
-      onRate={(path) =>
-        setRatings((prev) => {
-          const next = new Map(prev);
-          next.set(path, ((next.get(path) ?? 0) + 1) % 6);
-          return next;
-        })
-      }
-      onFavorite={(path) =>
-        setFavorites((prev) => {
-          const next = new Set(prev);
-          if (next.has(path)) next.delete(path);
-          else next.add(path);
-          return next;
-        })
-      }
-      onOpen={() => {
-        /* 屏 2（M5）落地后接全屏看图 */
-      }}
-      onVisibleRange={onVisibleRange}
-    />
+    <>
+      <Grid
+        items={viewEntries}
+        groups={groups}
+        scrollKey={`${dir}|${view}`}
+        cellIdx={cellIdx}
+        selected={selected}
+        current={current}
+        thumbs={thumbState.current}
+        ratings={ratings}
+        favorites={favorites}
+        onPick={pick}
+        onRate={(path) =>
+          setRatings((prev) => {
+            const next = new Map(prev);
+            next.set(path, ((next.get(path) ?? 0) + 1) % 6);
+            return next;
+          })
+        }
+        onFavorite={(path) =>
+          setFavorites((prev) => {
+            const next = new Set(prev);
+            if (next.has(path)) next.delete(path);
+            else next.add(path);
+            return next;
+          })
+        }
+        onOpen={() => {
+          /* 屏 2（M5）落地后接全屏看图 */
+        }}
+        onVisibleRange={onVisibleRange}
+      />
+      {dialogView ? (
+        <ConfirmDialog
+          {...dialogView}
+          onCancel={() => closeDialog()}
+          onConfirm={() => {
+            const d = dialog;
+            closeDialog(() => {
+              if (d) void runDelete(d.paths, d.permanent);
+            });
+          }}
+        />
+      ) : null}
+      <Toast data={toast} onDone={() => setToast(null)} />
+    </>
   );
 }

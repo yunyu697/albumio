@@ -192,6 +192,32 @@ pub fn read(path: &Path) -> Result<PhotoMeta> {
     })
 }
 
+/// 时间线只需要的三个值：拍摄时间、可读文本、来源（EXIF/XMP/推断）。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Taken {
+    pub taken_at: i64,
+    pub taken_at_text: Option<String>,
+    pub source: MetaSource,
+}
+
+/// 比 [`read`] 轻得多：只读 EXIF 的拍摄时间与 XMP 的 createDate，不解尺寸、不取 ICC、不算直方图。
+/// 时间线要按拍摄时间分桶，1 万项时不能走完整元数据读取。
+pub fn taken_of(path: &Path) -> Result<Taken> {
+    let fs_meta = std::fs::metadata(path)?;
+    let mtime_ms = div_floor(crate::cache::mtime_ns(&fs_meta), 1_000_000);
+    let exif = read_exif(path);
+    let xmp = xmp_packet_from_file(path)
+        .map(|packet| parse_xmp(&String::from_utf8_lossy(&packet)))
+        .unwrap_or_default();
+    let merged = merge(&exif, &xmp, mtime_ms);
+    Ok(Taken {
+        taken_at: merged.taken_at,
+        taken_at_text: merged.taken_at_text,
+        source: merged.taken_source.unwrap_or(MetaSource::Inferred),
+    })
+}
+
 /// MWG 合并：XMP 优先，EXIF 兜底，最后回退文件时间并标「推断」。
 pub fn merge(exif: &ExifMeta, xmp: &XmpMeta, mtime_ms: i64) -> Merged {
     let (taken_at, taken_at_text, taken_source) = if let Some(t) = xmp.create_date {

@@ -9,7 +9,7 @@
  */
 
 import { invoke } from "@tauri-apps/api/core";
-import { pictureDir } from "@tauri-apps/api/path";
+import { desktopDir, downloadDir, homeDir, pictureDir } from "@tauri-apps/api/path";
 import { StatScheduler, type Priority, type StatBatchResult, type StatRow } from "./scheduler";
 
 export interface Entry {
@@ -109,6 +109,146 @@ export async function thumbUrl(path: string, level: "l0" | "l1"): Promise<string
   const bytes = await invoke<ArrayBuffer>("albumio_thumb", { path, level });
   const url = URL.createObjectURL(new Blob([bytes], { type: "image/webp" }));
   return cachePut(key, url);
+}
+
+/* ---------------- 删除（§11.6） ---------------- */
+
+export interface DeleteFailure {
+  path: string;
+  reason: string;
+}
+
+export interface DeleteOutcome {
+  deleted: string[];
+  failed: DeleteFailure[];
+  canUndo: boolean;
+  at: number;
+}
+
+/**
+ * 删除。`permanent=false` 进系统回收站（可撤销），`true` 从磁盘删除。
+ * 浏览器假数据下直接成功，不产生真实删除。
+ */
+export async function deletePaths(
+  paths: string[],
+  permanent: boolean
+): Promise<DeleteOutcome> {
+  if (!isTauri()) {
+    return { deleted: paths, failed: [], canUndo: !permanent, at: 0 };
+  }
+  return invoke<DeleteOutcome>("albumio_delete", { paths, permanent });
+}
+
+/** 撤销「移到回收站」，`since` 用删除返回的 `at`。 */
+export async function restorePaths(paths: string[], since: number): Promise<DeleteOutcome> {
+  if (!isTauri()) {
+    return { deleted: paths, failed: [], canUndo: true, at: 0 };
+  }
+  return invoke<DeleteOutcome>("albumio_restore", { paths, since });
+}
+
+/* ---------------- 侧栏与时间线（M3） ---------------- */
+
+export interface NavRoot {
+  name: string;
+  path: string;
+}
+
+export interface SubDir {
+  name: string;
+  path: string;
+  /** 直接子文件里的图片数（不递归）。 */
+  images: number;
+}
+
+export interface DiskInfo {
+  label: string;
+  freeBytes: number;
+  totalBytes: number;
+}
+
+export interface TakenRow {
+  path: string;
+  takenAt: number;
+  takenAtText: string | null;
+  source: "exif" | "xmp" | "inferred";
+  failed: boolean;
+}
+
+/** 树的根：Windows 是盘符，Unix 是 `/` 与主目录。 */
+export async function navRoots(): Promise<NavRoot[]> {
+  if (!isTauri()) return [{ name: "图片", path: "mock://图片" }];
+  return invoke<NavRoot[]>("albumio_roots");
+}
+
+/** 展开一层：只读直接子目录，带各自的直接图片数。 */
+export async function subDirs(dir: string): Promise<SubDir[]> {
+  if (!isTauri()) {
+    if (dir === "mock://图片") {
+      return [
+        { name: "2024", path: "mock://图片/2024", images: 0 },
+        { name: "2025", path: "mock://图片/2025", images: 12 },
+      ];
+    }
+    if (dir === "mock://图片/2024") {
+      return [{ name: "京都", path: "mock://图片/2024/京都", images: 42 }];
+    }
+    return [];
+  }
+  return invoke<SubDir[]>("albumio_dirs", { dir });
+}
+
+/** 侧栏底部的磁盘用量；取不到返回 null（网络盘、权限）。 */
+export async function diskInfo(dir: string): Promise<DiskInfo | null> {
+  if (!isTauri()) {
+    return { label: "C:", freeBytes: 128 * 1024 ** 3, totalBytes: 512 * 1024 ** 3 };
+  }
+  try {
+    return await invoke<DiskInfo | null>("albumio_disk", { dir });
+  } catch {
+    return null;
+  }
+}
+
+/** 时间线分桶：只读拍摄时间，一批 250 条由调用方切。 */
+export async function takenTimes(paths: string[]): Promise<TakenRow[]> {
+  if (!isTauri()) {
+    const base = Date.now();
+    return paths.map((path, i) => ({
+      path,
+      takenAt: base - i * 36_000_000,
+      takenAtText: null,
+      source: i % 7 === 0 ? "inferred" : "exif",
+      failed: false,
+    }));
+  }
+  return invoke<TakenRow[]>("albumio_taken", { paths });
+}
+
+/** 快速访问：图片 / 桌面 / 下载 / 主目录，取不到的跳过。 */
+export async function quickPlaces(): Promise<NavRoot[]> {
+  if (!isTauri()) {
+    return [
+      { name: "图片", path: "mock://图片" },
+      { name: "下载", path: "mock://下载" },
+    ];
+  }
+  const probes: Array<[string, () => Promise<string>]> = [
+    ["图片", pictureDir],
+    ["桌面", desktopDir],
+    ["下载", downloadDir],
+    ["主目录", homeDir],
+  ];
+  const out: NavRoot[] = [];
+  for (const [name, fn] of probes) {
+    try {
+      const p = await fn();
+      if (p) out.push({ name, path: p });
+    } catch {
+      /* 某些系统目录不存在（如企业环境禁用了桌面），跳过 */
+    }
+  }
+  return out;
 }
 
 /* ---------------- 浏览器假数据 ---------------- */
