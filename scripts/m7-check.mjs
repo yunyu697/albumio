@@ -197,19 +197,85 @@ try {
   console.log("4 重试", JSON.stringify(g, null, 2));
   if (g.states.some((r) => r.cls.includes("fail"))) throw new Error("重试后仍有失败行");
 
-  /* 5. 实现（可选） */
+  /* 5. 实现（可选）：入口 → 空闲 → 处理中 → 暂停/继续 → 完成 → 重试 */
   if (URL) {
     await cdp.send("Page.navigate", { url: URL });
-    await sleep(1800);
+    await sleep(2000);
     const app = await evalJs(
       cdp,
       `(() => ({ batchBtn: !!document.querySelector('[title="批量处理"], .toolbar [aria-label="批量处理"]'), tiles: document.querySelectorAll('.tile').length }))()`
     );
-    console.log("5 实现入口", app);
+    console.log("5.1 实现入口", app);
     if (!app.batchBtn) throw new Error("实现里找不到批量处理入口");
+    if (app.tiles === 0) throw new Error("实现里没有可批量的样例图片");
+
+    const open = await evalJs(
+      cdp,
+      `(() => {
+        const b = document.querySelector('[title="批量处理"], .toolbar [aria-label="批量处理"]');
+        b?.click();
+        return !!b;
+      })()`
+    );
+    if (!open) throw new Error("批量处理入口不可点击");
+    for (let i = 0; i < 20 && !(await evalJs(cdp, `!!document.querySelector('.b-row')`)); i++) {
+      await sleep(150);
+    }
+    await sleep(500); // 等 120ms 防抖后的规划结果
+    g = await evalJs(cdp, GEO);
+    console.log("5.2 实现空闲态", JSON.stringify(g, null, 2));
+    near(g.settings?.w, 360, 1, "实现右栏宽");
+    near(g.head?.h, 48, 1, "实现顶栏高");
+    near(g.row?.h, 28, 0.5, "实现列表行高");
+    near(g.start?.h, 36, 1, "实现主按钮高");
+    if (g.start.text !== "开始处理") throw new Error(`实现主按钮文案：${g.start.text}`);
+    if (g.states.length !== 0) throw new Error("实现空闲态不应出现状态列");
+    if (!g.prog?.hidden) throw new Error("实现空闲态不应出现进度条");
+    await shot(cdp, join(ACC, "m7-app-idle.png"));
+
+    await evalJs(cdp, click("#bStart"));
+    await sleep(900);
+    g = await evalJs(cdp, GEO);
+    console.log("5.3 实现处理中", JSON.stringify(g, null, 2));
+    if (g.prog.hidden) throw new Error("实现处理中进度条未出现");
+    if (g.start.text !== "暂停") throw new Error(`实现处理中主按钮应为暂停：${g.start.text}`);
+    if (g.states.length === 0) throw new Error("实现处理中未出现状态列");
+    await shot(cdp, join(ACC, "m7-app-running.png"));
+
+    await evalJs(cdp, click("#bStart"));
+    await sleep(300);
+    const appPaused = await evalJs(cdp, `document.querySelector('#bStart').textContent.trim()`);
+    if (appPaused !== "继续") throw new Error(`实现暂停后应为继续：${appPaused}`);
+    await evalJs(cdp, click("#bStart"));
+
+    let finished = false;
+    for (let i = 0; i < 40; i++) {
+      await sleep(250);
+      const text = await evalJs(cdp, `document.querySelector('#bStart').textContent.trim()`);
+      if (text === "完成") {
+        finished = true;
+        break;
+      }
+    }
+    if (!finished) throw new Error("实现批量任务未在 10s 内完成");
+    g = await evalJs(cdp, GEO);
+    console.log("5.4 实现完成态", JSON.stringify(g, null, 2));
+    const appFail = g.states.filter((r) => r.cls.includes("fail"));
+    const appSkip = g.states.filter((r) => r.cls.includes("skip"));
+    if (appFail.length !== 1) throw new Error(`实现应恰有 1 个失败行，实际 ${appFail.length}`);
+    if (appSkip.length !== 1) throw new Error(`实现应恰有 1 个跳过行，实际 ${appSkip.length}`);
+    if (!g.resultRows.some((t) => t.includes("源文件不可读"))) throw new Error("实现结果清单缺少失败原因");
+    if (!g.resultRows.some((t) => t.includes("同名文件已存在"))) throw new Error("实现结果清单缺少跳过原因");
+    await shot(cdp, join(ACC, "m7-app-done.png"));
+
+    await evalJs(cdp, click("#bRetry"));
+    await sleep(1200);
+    const retried = await evalJs(cdp, GEO);
+    if (retried.states.some((r) => r.cls.includes("fail"))) throw new Error("实现重试后仍有失败行");
+    await evalJs(cdp, click("#bBack"));
   }
 
-  console.log("\nM7 补稿自检通过：空闲 / 处理中 / 完成三态与失败、跳过清单均按 §11.5 呈现");
+  console.log("\nM7 自检通过：设计稿三态 + 实现屏 4（几何、进度、暂停/继续、失败/跳过清单、重试）");
 } finally {
   proc.kill();
 }

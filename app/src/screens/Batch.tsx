@@ -527,14 +527,11 @@ export function Batch({ dir, sources: seed, onClose }: BatchProps) {
             </div>
             {runError && <div className="hint">{runError}</div>}
             <div className="b-actions">
-              <button
-                className="btn ghost wbtn"
-                id="bRetry"
-                hidden={phase !== "done" || failCount === 0}
-                onClick={retry}
-              >
-                重新处理失败项
-              </button>
+              {phase === "done" && failCount > 0 && (
+                <button className="btn ghost wbtn" id="bRetry" onClick={retry}>
+                  重新处理失败项
+                </button>
+              )}
               <button className="btn primary wbtn" id="bStart" onClick={primary} disabled={phase === "idle" && !plan}>
                 {phase === "idle" && <Icon id="i-play" size="sm" />}
                 {primaryLabel}

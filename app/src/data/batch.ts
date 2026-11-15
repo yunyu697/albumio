@@ -149,6 +149,12 @@ function keepFormat(name: string): "jpeg" | "png" | "webp" {
   return "jpeg";
 }
 
+// 模拟用的固定失败/跳过项：按 src 记住，暂停续跑不会重复触发，重试后变成功。
+let mockSkipSrc: string | null = null;
+let mockFailSrc: string | null = null;
+let mockSkipDone = false;
+let mockFailDone = false;
+
 function mockPlan(sources: BatchSourceInput[], o: BatchOptions): BatchPlan {
   const taken = new Set<string>();
   const total = sources.length;
@@ -199,6 +205,13 @@ function mockPlan(sources: BatchSourceInput[], o: BatchOptions): BatchPlan {
     });
   });
 
+  if (items.length > 10) {
+    mockSkipSrc = items[3]?.src ?? null;
+    mockFailSrc = items[8]?.src ?? null;
+    mockSkipDone = false;
+    mockFailDone = false;
+  }
+
   const formats = new Set(items.map((i) => LABEL[i.format]));
   const fmtLabel = formats.size === 1 ? [...formats][0] : "混合格式";
   return {
@@ -221,19 +234,17 @@ async function mockRun(
 ): Promise<BatchOutcome> {
   mockCancelled = false;
   const results: BatchItemResult[] = [];
-  const fullBatch = items.length > 3;
   for (let i = 0; i < items.length; i++) {
     if (mockCancelled) return { cancelled: true, results };
     const item = items[i];
     onProgress({ index: i, total: items.length, phase: "begin" });
     await sleep(170);
     if (mockCancelled) return { cancelled: true, results };
-    const status: BatchItemStatus =
-      item.skip || (fullBatch && i === 3)
-        ? "skipped"
-        : fullBatch && i === 8
-          ? "failed"
-          : "done";
+    const mockSkip = !item.skip && item.src === mockSkipSrc && !mockSkipDone;
+    const mockFail = !mockSkip && item.src === mockFailSrc && !mockFailDone;
+    if (mockSkip) mockSkipDone = true;
+    if (mockFail) mockFailDone = true;
+    const status: BatchItemStatus = item.skip || mockSkip ? "skipped" : mockFail ? "failed" : "done";
     results.push({
       src: item.src,
       out: status === "done" ? item.out : null,
