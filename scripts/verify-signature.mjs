@@ -37,7 +37,17 @@ function readPubkey(input) {
   } catch {
     text = input.trim();
   }
-  const raw = Buffer.from(text, "base64");
+  let raw = Buffer.from(text, "base64");
+  // tauri.conf.json 里的 pubkey 是 base64(整个 .pub 文本)，需要再取其中的公钥行。
+  if (raw.subarray(0, 2).toString("latin1") !== "Ed") {
+    const inner = raw
+      .toString("utf8")
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter((line) => line && !line.startsWith("untrusted comment:") && !line.startsWith("trusted comment:"));
+    if (inner.length === 0) fail("公钥内容里找不到 minisign 公钥行");
+    raw = Buffer.from(inner[0], "base64");
+  }
   if (raw.length !== 42 || raw.subarray(0, 2).toString("latin1") !== "Ed") {
     fail("公钥不是合法的 minisign Ed25519 公钥（应为 base64 的 42 字节 Ed 结构）");
   }
