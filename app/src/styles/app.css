@@ -285,6 +285,96 @@ input[type=range].lr::-moz-range-thumb {
   background: var(--ds-color-canvas);
 }
 
+/* ================= 网格（M2）=================
+   数值逐条对齐 design/index.html 的 .grid / .tile。
+   与设计稿的唯一区别是 DOM：虚拟滚动按行绝对定位，行的 top 由 JS 计算；
+   每行的 padding / gap / 格宽 / 文件名条高度与设计稿保持一致。 */
+.grid {
+  position: relative;
+  width: 100%;
+}
+.grid-row {
+  position: absolute;
+  left: 0;
+  right: 0;
+  display: flex;
+  align-items: flex-start;
+  padding: 0 var(--lv-grid-pad);
+}
+.tile { width: var(--lv-cell); cursor: default; position: relative; flex: none; }
+.tile-img {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  border-radius: var(--ds-radius-sm);
+  overflow: hidden;
+  background: var(--ds-color-surface-3);
+  outline: var(--ds-border-focus) solid transparent;
+  outline-offset: var(--ds-border-offset);
+  transition: outline-color var(--ds-dur-1) var(--ds-ease-standard);
+}
+.tile-img img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.tile:hover .tile-img { outline-color: var(--ds-color-line-strong); }
+.tile.sel .tile-img { outline-color: var(--ds-color-accent); }
+.tile.sel .tile-cap,
+.tile:hover .tile-cap { opacity: 1; }
+.tile-cap {
+  height: var(--lv-cell-caption);
+  display: flex;
+  align-items: center;
+  font-size: var(--ds-font-size-11);
+  line-height: var(--ds-leading-snug);
+  color: var(--ds-color-on-media);
+  opacity: .72;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  padding-top: var(--ds-space-2);
+  transition: opacity var(--ds-dur-2) var(--ds-ease-standard);
+}
+.tile-badge {
+  position: absolute;
+  top: var(--ds-space-2);
+  left: var(--ds-space-2);
+  z-index: 2;
+  min-width: var(--ds-icon-md);
+  height: var(--ds-icon-md);
+  padding: 0 var(--ds-space-1);
+  border-radius: var(--ds-radius-pill);
+  background: var(--ds-color-accent);
+  color: var(--ds-color-on-accent);
+  font-family: var(--ds-font-mono);
+  font-size: var(--ds-font-size-10);
+  font-weight: var(--ds-font-weight-600);
+  display: none;
+  align-items: center;
+  justify-content: center;
+}
+.tile-acts {
+  position: absolute;
+  top: var(--ds-space-2);
+  right: var(--ds-space-2);
+  z-index: 2;
+  display: flex;
+  gap: var(--ds-space-1);
+  opacity: 0;
+  transition: opacity var(--ds-dur-2) var(--ds-ease-standard);
+}
+.tile:hover .tile-acts { opacity: 1; }
+.act {
+  width: var(--ds-control-h-sm);
+  height: var(--ds-control-h-sm);
+  display: grid;
+  place-items: center;
+  border-radius: var(--ds-radius-sm);
+  background: var(--ds-color-media-scrim);
+  color: var(--ds-color-on-media);
+  backdrop-filter: blur(6px);
+}
+.act:hover { background: var(--ds-color-accent); color: var(--ds-color-on-accent); }
+.act.starred { color: var(--ds-color-warn); }
+.act.faved { color: var(--ds-color-danger); }
+
 /* 检查器 */
 .inspector {
   width: var(--lv-inspector-w);

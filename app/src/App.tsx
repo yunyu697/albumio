@@ -1,6 +1,41 @@
+import { useCallback, useState } from "react";
 import { Icon, IconSprite } from "./icons";
+import Browse, { type GridStatus } from "./screens/Browse";
+
+const EMPTY_STATUS: GridStatus = {
+  dir: "",
+  total: 0,
+  selected: 0,
+  knownBytes: 0,
+  statsComplete: false,
+  cell: 128,
+  currentName: null,
+  currentSize: null,
+};
+
+function formatBytes(n: number): string {
+  if (n <= 0) return "—";
+  const units = ["B", "KB", "MB", "GB", "TB"];
+  let v = n;
+  let i = 0;
+  while (v >= 1024 && i < units.length - 1) {
+    v /= 1024;
+    i++;
+  }
+  return `${v >= 100 ? v.toFixed(0) : v.toFixed(1)} ${units[i]}`;
+}
 
 export default function App() {
+  const [cellIdx, setCellIdx] = useState(2);
+  const [status, setStatus] = useState<GridStatus>(EMPTY_STATUS);
+
+  // Browse 的状态回传每帧都可能触发；内容相同就不换引用，避免自激重渲染。
+  const onStatus = useCallback((s: GridStatus) => {
+    setStatus((prev) => (JSON.stringify(prev) === JSON.stringify(s) ? prev : s));
+  }, []);
+
+  const currentExt = status.currentName?.split(".").pop()?.toUpperCase() ?? "";
+
   return (
     <div className="app" data-screen="browse">
       <IconSprite />
@@ -67,7 +102,16 @@ export default function App() {
           </div>
           <div className="zoomctl">
             <Icon id="i-grid" size="sm" />
-            <input className="lr" type="range" min="1" max="5" step="1" defaultValue="2" aria-label="缩略图尺寸" />
+            <input
+              className="lr"
+              type="range"
+              min="1"
+              max="5"
+              step="1"
+              value={cellIdx}
+              onChange={(e) => setCellIdx(Number(e.target.value))}
+              aria-label="缩略图尺寸"
+            />
           </div>
         </div>
         <div className="tsep" />
@@ -115,7 +159,11 @@ export default function App() {
         <aside className="sidebar">
           <div className="side-scroll" />
         </aside>
-        <div className="stage" />
+        <Browse
+          cellIdx={cellIdx}
+          onCellIdxChange={setCellIdx}
+          onStatus={onStatus}
+        />
         <aside className="inspector">
           <div className="rail insp-rail">
             <button className="ibtn" title="展开检查器" data-tip="">
@@ -132,25 +180,25 @@ export default function App() {
       {/* 状态栏 */}
       <footer className="statusbar">
         <span>
-          <span className="sb-num">42</span> 项
+          <span className="sb-num">{status.total}</span> 项
         </span>
         <span className="sb-sep" />
-        <span>已选 <span className="sb-num">0</span></span>
+        <span>已选 <span className="sb-num">{status.selected}</span></span>
         <span className="sb-sep" />
-        <span>1.24 GB</span>
+        <span>{formatBytes(status.knownBytes)}</span>
         <div className="sb-mid" style={{ marginLeft: "var(--ds-space-5)" }}>
           <span className="sb-sep" />
-          <span className="name">DSC_0482.JPG</span>
-          <span className="sb-num">6000×4000</span>
-          <span>JPEG</span>
-          <span className="sb-num">8.4 MB</span>
-          <span>2024-11-03 16:20</span>
+          <span className="name">{status.currentName ?? "—"}</span>
+          <span className="sb-num">—</span>
+          <span>{currentExt || "—"}</span>
+          <span className="sb-num">{formatBytes(status.currentSize ?? 0)}</span>
+          <span>—</span>
         </div>
         <div className="sb-right">
-          <span>索引 <span className="sb-num">42 / 42</span></span>
-          <span className="progress"><i /></span>
+          <span>索引 <span className="sb-num">{status.statsComplete ? status.total : 0} / {status.total}</span></span>
+          <span className="progress"><i style={{ width: `${status.total ? (status.statsComplete ? 100 : 60) : 0}%` }} /></span>
           <span className="sb-sep" />
-          <span>格宽 <span className="sb-num">128</span> px</span>
+          <span>格宽 <span className="sb-num">{status.cell}</span> px</span>
           <span className="sb-sep" />
           <span>缩放 <span className="sb-num">100%</span></span>
         </div>

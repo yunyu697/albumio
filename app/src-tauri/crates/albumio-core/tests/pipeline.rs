@@ -229,6 +229,12 @@ fn perf_budget_for_l1_and_l0() {
     );
     assert_eq!(l1.width.max(l1.height), 256);
     // 预算（01-方案文档 §3）：p50 ≤ 95ms；这里只用单次采样，给 1s 宽限避免抖动。
+    // 只在 release 下断言耗时：debug 未优化，同一张图在本机是 1.1s vs release 94ms，
+    // 拿 debug 数字判定预算会把"编译选项"误判成"实现不合格"。
+    if cfg!(debug_assertions) {
+        println!("debug 构建：跳过耗时断言（release 实测见 docs/acceptance/M2.md）");
+        return;
+    }
     assert!(
         l1.elapsed_ms < 1000,
         "L1 耗时 {} ms 明显超预算",

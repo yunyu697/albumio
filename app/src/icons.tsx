@@ -54,6 +54,8 @@ const ICONS: Record<string, ReactNode> = {
       <path d="M15 4v16" />
     </>
   ),
+  "i-star": <path d="M12 3.6l2.6 5.3 5.9.9-4.3 4.1 1 5.8-5.2-2.8-5.2 2.8 1-5.8L3.5 9.8l5.9-.9z" />,
+  "i-heart": <path d="M12 20s-7-4.4-7-9a4 4 0 017-2.6A4 4 0 0119 11c0 4.6-7 9-7 9z" />,
   "i-minus": <path d="M5 12h14" />,
   "i-x": <path d="M6 6l12 12M18 6L6 18" />,
 };

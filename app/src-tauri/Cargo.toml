@@ -27,3 +27,12 @@ lto = true
 opt-level = "s"
 panic = "abort"
 strip = true
+
+# dev 下依赖不优化，图像解码慢约 30 倍（1 万项实测：L1 单张 release 22ms / debug 约 700ms），
+# `tauri dev` 里的网格会因此看不出真实观感。依赖开 O3，自身代码保持默认以便快速增量编译。
+[profile.dev.package."*"]
+opt-level = 3
+
+# `"*"` 只覆盖注册表依赖，本工作区的路径依赖要单独点名，否则解码/缩放仍是 O0。
+[profile.dev.package.albumio-core]
+opt-level = 3

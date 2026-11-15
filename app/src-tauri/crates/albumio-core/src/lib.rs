@@ -8,6 +8,7 @@ pub mod cache;
 pub mod color;
 pub mod decode;
 pub mod encode;
+pub mod listing;
 pub mod orient;
 pub mod pipeline;
 pub mod probe;
@@ -15,6 +16,7 @@ pub mod thumb;
 
 pub use cache::{Cache, Level, PIPELINE_VERSION};
 pub use decode::DecodedImage;
+pub use listing::{EntryStat, ListEntry, Listing, Priority};
 pub use orient::apply_orientation;
 pub use pipeline::{FileInfo, Pipeline, ThumbResult};
 pub use probe::ImageFormat;

@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>S5 · 网格滚动流畅度（10k 项）</title>
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: #08090A; color: #E8EAEE; font: 12px/1.4 system-ui, sans-serif; }
+  #stage { width: 1200px; height: 700px; overflow-y: auto; overflow-x: hidden; position: relative; }
+  #spacer { position: relative; }
+  #layer { position: absolute; inset: 0 auto auto 0; width: 100%; }
+  .row { position: absolute; left: 0; display: flex; gap: 12px; padding: 0 12px; }
+  .cell { width: 128px; flex: none; }
+  .img { width: 128px; height: 128px; border-radius: 4px; background: #262A2F center/cover no-repeat; }
+  .cap { height: 20px; padding-top: 4px; font-size: 11px; color: #F4F6F8; opacity: .72; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #out { position: fixed; left: 0; top: 0; z-index: 9; background: #000; padding: 8px; white-space: pre-wrap; }
+</style>
+</head>
+<body>
+<div id="stage"><div id="spacer"><div id="layer"></div></div></div>
+<pre id="out">running…</pre>
+<script>
+/* 与 design/index.html 同参数：格宽 128、间距 12、内边距 12、文件名条 20 */
+const CELL = 128, GAP = 12, PAD = 12, CAP = 20, N = 10000;
+const stage = document.getElementById('stage');
+const spacer = document.getElementById('spacer');
+const layer = document.getElementById('layer');
+
+/* 复用同一张解码后的位图，避免把"1 万次解码"混进滚动测量 */
+const c = document.createElement('canvas');
+c.width = c.height = 128;
+{
+  const g = c.getContext('2d');
+  const grd = g.createLinearGradient(0, 0, 128, 128);
+  grd.addColorStop(0, '#2A3A55'); grd.addColorStop(.5, '#8A5A7A'); grd.addColorStop(1, '#C98A5A');
+  g.fillStyle = grd; g.fillRect(0, 0, 128, 128);
+}
+const thumb = c.toDataURL('image/png');
+
+const cols = Math.floor((stage.clientWidth - PAD * 2 + GAP) / (CELL + GAP));
+const rowH = CELL + CAP + GAP;
+const rows = Math.ceil(N / cols);
+spacer.style.height = (rows * rowH - GAP + PAD * 2) + 'px';
+
+let first = -1, last = -1;
+function render() {
+  const top = stage.scrollTop;
+  const overscan = 2;
+  const r0 = Math.max(0, Math.floor((top - PAD) / rowH) - overscan);
+  const r1 = Math.min(rows - 1, Math.ceil((top + stage.clientHeight - PAD) / rowH) + overscan);
+  if (r0 === first && r1 === last) return;
+  first = r0; last = r1;
+  const out = [];
+  for (let r = r0; r <= r1; r++) {
+    const items = [];
+    for (let k = 0; k < cols; k++) {
+      const i = r * cols + k;
+      if (i >= N) break;
+      items.push(`<div class="cell"><div class="img" style="background-image:url(${thumb})"></div><div class="cap">DSC_${String(i).padStart(5, '0')}.JPG</div></div>`);
+    }
+    out.push(`<div class="row" style="top:${PAD + r * rowH}px;height:${rowH}px">${items.join('')}</div>`);
+  }
+  layer.innerHTML = out.join('');
+}
+render();
+
+/* 连续滚动 10 秒（无头下用帧数计），记录帧间隔 */
+function pct(arr, p) { const a = [...arr].sort((x, y) => x - y); return a[Math.min(a.length - 1, Math.floor(a.length * p))]; }
+function done(frames, renderMs) {
+  const avg = frames.reduce((a, b) => a + b, 0) / frames.length;
+  const long = frames.filter(f => f > 20).length;
+  const veryLong = frames.filter(f => f > 33).length;
+  const res = {
+    frames: frames.length,
+    cols,
+    rows,
+    avgFrameMs: +avg.toFixed(2),
+    avgFps: +(1000 / avg).toFixed(1),
+    p50: +pct(frames, .5).toFixed(2),
+    p95: +pct(frames, .95).toFixed(2),
+    p99: +pct(frames, .99).toFixed(2),
+    max: +Math.max(...frames).toFixed(2),
+    over20ms: long,
+    over33ms: veryLong,
+    renderAvgMs: +(renderMs.reduce((a, b) => a + b, 0) / renderMs.length).toFixed(2),
+    renderMaxMs: +Math.max(...renderMs).toFixed(2),
+    scrollWidth: stage.scrollWidth,
+    clientWidth: stage.clientWidth
+  };
+  document.getElementById('out').textContent = 'S5_RESULT ' + JSON.stringify(res);
+  return res;
+}
+
+/** 由 CDP 调用；无头下必须有人请求帧，rAF 才会推进（见 scripts/spike-s5-scroll.mjs）。 */
+window.__runBench = () => new Promise((resolve) => {
+  const frames = [];
+  const renderMs = [];
+  let lastT = 0, dir = 1;
+  function tick(t) {
+    if (lastT) frames.push(t - lastT);
+    lastT = t;
+    const r0 = performance.now();
+    render();
+    renderMs.push(performance.now() - r0);
+    stage.scrollTop += 6 * dir;
+    if (stage.scrollTop <= 0) dir = 1;
+    if (stage.scrollTop >= stage.scrollHeight - stage.clientHeight) dir = -1;
+    if (frames.length < 600) requestAnimationFrame(tick);
+    else resolve(done(frames, renderMs));
+  }
+  requestAnimationFrame(tick);
+});
+</script>
+</body>
+</html>

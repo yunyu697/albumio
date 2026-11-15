@@ -9,6 +9,8 @@ export default defineConfig({
   server: {
     port: 5183,
     strictPort: true,
+    // src-tauri/target 里的 DLL 会被 cargo 持续写入；Vite 监听它会 EBUSY 直接崩掉（Windows）。
+    watch: { ignored: ["**/src-tauri/**"] },
   },
   build: {
     target: "chrome110",
