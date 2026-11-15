@@ -5,10 +5,15 @@ use albumio_core::{
 use serde::Serialize;
 use std::io;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use std::time::Instant;
-use tauri::Manager;
+use tauri::{Emitter, Manager};
 
 pub struct DataDir(pub PathBuf);
+
+/// 批量处理的取消标志：同一时间只跑一个任务（屏 4 是独占的）。
+pub struct BatchState(pub Arc<AtomicBool>);
 
 /// 索引是旁路：打不开就为 None，浏览/看图/编辑/导出一切照常（folder-first）。
 pub struct IndexState(pub Option<Index>);
@@ -322,6 +327,39 @@ fn albumio_edit_export(
         .map_err(|e| e.to_string())
 }
 
+/* ---------------- 批量处理（04-项目计划 M7 / 屏 4） ---------------- */
+
+/// 规划：输出名、冲突、预计尺寸都不落盘，只读文件头与 EXIF 方向。
+#[tauri::command]
+fn albumio_batch_plan(
+    sources: Vec<albumio_core::BatchSource>,
+    options: albumio_core::BatchOptions,
+) -> Result<albumio_core::BatchPlan, String> {
+    albumio_core::batch::plan(&sources, &options).map_err(|e| e.to_string())
+}
+
+/// 执行：在阻塞线程里逐条处理，每条结果通过 `albumio://batch-progress` 推送。
+#[tauri::command]
+async fn albumio_batch_run(
+    app: tauri::AppHandle,
+    items: Vec<albumio_core::BatchPlanItem>,
+) -> Result<albumio_core::BatchOutcome, String> {
+    let cancel = app.state::<BatchState>().0.clone();
+    cancel.store(false, Ordering::Relaxed);
+    tauri::async_runtime::spawn_blocking(move || {
+        albumio_core::batch::run(&items, &cancel, |progress| {
+            let _ = app.emit("albumio://batch-progress", progress);
+        })
+    })
+    .await
+    .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn albumio_batch_cancel(state: tauri::State<BatchState>) {
+    state.0.store(true, Ordering::Relaxed);
+}
+
 /// 启动目录：命令行第一个参数是存在的目录就用它，否则返回 null（前端回退到"图片"目录）。
 #[tauri::command]
 fn albumio_start_dir(start: tauri::State<StartDir>) -> Option<String> {
@@ -417,6 +455,7 @@ pub fn run() {
             app.manage(pipeline);
             app.manage(Listing::new());
             app.manage(IndexState(index));
+            app.manage(BatchState(Arc::new(AtomicBool::new(false))));
             #[cfg(target_os = "windows")]
             if let Some(window) = app.get_webview_window("main") {
                 // 启动时先按当前系统主题放一次，之后由 ThemeChanged 接管。
@@ -454,7 +493,10 @@ pub fn run() {
             albumio_edits_load,
             albumio_edits_save,
             albumio_edit_preview,
-            albumio_edit_export
+            albumio_edit_export,
+            albumio_batch_plan,
+            albumio_batch_run,
+            albumio_batch_cancel
         ])
         .run(tauri::generate_context!())
         .expect("error while running albumio");

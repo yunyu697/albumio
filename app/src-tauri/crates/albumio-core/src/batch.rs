@@ -270,13 +270,35 @@ pub fn plan(sources: &[BatchSource], opts: &BatchOptions) -> Result<BatchPlan> {
         };
 
         let renamed = if opts.rename {
+            // 前端没给日期/相机时（例如 stat 还没回填）回退到 EXIF，保证模板不出现空段。
+            let (exif_cam, exif_date, exif_time) =
+                if s.camera.is_empty() || s.date.is_empty() || s.time.is_empty() {
+                    exif_shot(&src)
+                } else {
+                    (String::new(), String::new(), String::new())
+                };
+            let camera = if s.camera.is_empty() {
+                exif_cam
+            } else {
+                s.camera.clone()
+            };
+            let date = if s.date.is_empty() {
+                exif_date
+            } else {
+                s.date.clone()
+            };
+            let time = if s.time.is_empty() {
+                exif_time
+            } else {
+                s.time.clone()
+            };
             let ctx = RenameCtx {
                 stem: &stem,
                 seq: i + 1,
                 seq_width,
-                camera: &s.camera,
-                date: &s.date,
-                time: &s.time,
+                camera: &camera,
+                date: &date,
+                time: &time,
                 width: ow,
                 height: oh,
             };
@@ -399,15 +421,15 @@ pub struct BatchOutcome {
 
 /// 逐条执行。取消只在文件边界生效：正在写的文件会写完，已完成的文件保持有效。
 pub fn run(
-    plan: &BatchPlan,
+    items: &[BatchPlanItem],
     cancel: &AtomicBool,
     mut on_progress: impl FnMut(BatchProgress),
 ) -> BatchOutcome {
-    let total = plan.items.len();
+    let total = items.len();
     let mut results = Vec::with_capacity(total);
     let mut cancelled = false;
 
-    for (i, item) in plan.items.iter().enumerate() {
+    for (i, item) in items.iter().enumerate() {
         if cancel.load(Ordering::Relaxed) {
             cancelled = true;
             break;
@@ -663,6 +685,46 @@ fn orientation_of(path: &Path) -> u8 {
         .map(|v| v as u8)
         .filter(|v| (1..=8).contains(v))
         .unwrap_or(1)
+}
+
+/// 重命名模板用的拍摄信息：相机、`YYYYMMDD`、`HHMMSS`。读不到就留空。
+fn exif_shot(path: &Path) -> (String, String, String) {
+    let Ok(file) = fs::File::open(path) else {
+        return (String::new(), String::new(), String::new());
+    };
+    let Ok(exif) = exif::Reader::new().read_from_container(&mut std::io::BufReader::new(file))
+    else {
+        return (String::new(), String::new(), String::new());
+    };
+    let camera = match (
+        exif.get_field(exif::Tag::Make, exif::In::PRIMARY),
+        exif.get_field(exif::Tag::Model, exif::In::PRIMARY),
+    ) {
+        (Some(make), Some(model)) => {
+            let make = make.display_value().to_string();
+            let model = model.display_value().to_string();
+            if model.starts_with(&make) {
+                model
+            } else {
+                format!("{make} {model}")
+            }
+        }
+        (None, Some(model)) => model.display_value().to_string(),
+        (Some(make), None) => make.display_value().to_string(),
+        _ => String::new(),
+    };
+    let dt = exif
+        .get_field(exif::Tag::DateTimeOriginal, exif::In::PRIMARY)
+        .or_else(|| exif.get_field(exif::Tag::DateTime, exif::In::PRIMARY))
+        .map(|f| f.display_value().to_string())
+        .unwrap_or_default();
+    let digits: String = dt.chars().filter(char::is_ascii_digit).collect();
+    let (date, time) = if digits.len() >= 14 {
+        (digits[0..8].to_string(), digits[8..14].to_string())
+    } else {
+        (String::new(), String::new())
+    };
+    (camera.trim().to_string(), date, time)
 }
 
 fn keep_format(f: ImageFormat) -> OutFormat {

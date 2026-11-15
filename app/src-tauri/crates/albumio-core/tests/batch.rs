@@ -71,7 +71,7 @@ fn conflicts_get_suffix_and_never_overwrite() {
     let names: Vec<_> = p.items.iter().map(|i| i.out_name.clone()).collect();
     assert_eq!(names, vec!["same.jpg", "same_1.jpg"]);
 
-    let outcome = run(&p, &AtomicBool::new(false), |_| {});
+    let outcome = run(&p.items, &AtomicBool::new(false), |_| {});
     assert_eq!(outcome.results.len(), 2);
     assert!(outcome.results.iter().all(|r| r.status == "done"));
     assert!(root.join("out/same.jpg").exists());
@@ -98,7 +98,7 @@ fn unchanged_output_is_skipped() {
     assert_eq!(p.skipped, 1);
     assert!(p.items[0].skip.as_deref().unwrap().contains("无需处理"));
 
-    let outcome = run(&p, &AtomicBool::new(false), |_| {});
+    let outcome = run(&p.items, &AtomicBool::new(false), |_| {});
     assert_eq!(outcome.results[0].status, "skipped");
     assert_eq!(fs::read(&src).unwrap(), before, "跳过时源文件必须原样不动");
 }
@@ -110,7 +110,7 @@ fn corrupt_source_fails_with_reason_not_silence() {
     fs::write(&bad, b"not an image at all").unwrap();
 
     let p = plan(&[source_of_broken(&bad)], &options(&tmp.path().join("out"))).unwrap();
-    let outcome = run(&p, &AtomicBool::new(false), |_| {});
+    let outcome = run(&p.items, &AtomicBool::new(false), |_| {});
     assert_eq!(outcome.results.len(), 1);
     assert_eq!(outcome.results[0].status, "failed");
     let reason = outcome.results[0].reason.as_deref().unwrap();
@@ -156,7 +156,7 @@ fn convert_and_resize_outputs_real_files() {
     assert!(p.summary.contains("JPEG"), "摘要：{}", p.summary);
     assert!(p.summary.contains("长边 2048"), "摘要：{}", p.summary);
 
-    let outcome = run(&p, &AtomicBool::new(false), |_| {});
+    let outcome = run(&p.items, &AtomicBool::new(false), |_| {});
     assert!(outcome.results.iter().all(|r| r.status == "done"));
     assert_eq!(dims(&root.join("out/big.jpg")), (2048, 1536));
     assert_eq!(fs::read(&big).unwrap(), before, "源图不能被改写");
@@ -207,7 +207,7 @@ fn hundred_mixed_formats_all_succeed() {
     o.resize = "long1280".into();
 
     let p = plan(&sources, &o).unwrap();
-    let outcome = run(&p, &AtomicBool::new(false), |_| {});
+    let outcome = run(&p.items, &AtomicBool::new(false), |_| {});
 
     let done = outcome
         .results
@@ -267,7 +267,7 @@ fn cancel_stops_at_file_boundary_and_cleans_parts() {
 
     let p = plan(&sources, &o).unwrap();
     let cancel = AtomicBool::new(false);
-    let outcome = run(&p, &cancel, |ev: BatchProgress| {
+    let outcome = run(&p.items, &cancel, |ev: BatchProgress| {
         if ev.phase == "item" {
             cancel.store(true, Ordering::Relaxed);
         }
@@ -298,7 +298,7 @@ fn jpeg_output_embeds_srgb_and_resets_orientation() {
     o.convert = true;
     o.format = "jpeg".into();
     let p = plan(&[source(&src)], &o).unwrap();
-    let outcome = run(&p, &AtomicBool::new(false), |_| {});
+    let outcome = run(&p.items, &AtomicBool::new(false), |_| {});
     assert_eq!(outcome.results[0].status, "done");
 
     let bytes = fs::read(tmp.path().join("out/rotated.jpg")).unwrap();
