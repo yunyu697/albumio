@@ -12,6 +12,9 @@ image = { version = "0.25", default-features = false, features = ["png", "tiff",
 fast_image_resize = "6"
 kamadak-exif = "0.6"
 lcms2 = "6"
+rusqlite = { version = "0.32", features = ["bundled"] }
+quick-xml = "0.37"
+serde_json = "1"
 xxhash-rust = { version = "0.8", features = ["xxh3"] }
 webp = "0.3"
 thiserror = "2"

@@ -8,7 +8,9 @@ pub mod cache;
 pub mod color;
 pub mod decode;
 pub mod encode;
+pub mod index;
 pub mod listing;
+pub mod meta;
 pub mod orient;
 pub mod pipeline;
 pub mod probe;
@@ -16,7 +18,9 @@ pub mod thumb;
 
 pub use cache::{Cache, Level, PIPELINE_VERSION};
 pub use decode::DecodedImage;
+pub use index::{Index, IndexStatus, SCHEMA_VERSION};
 pub use listing::{EntryStat, ListEntry, Listing, Priority};
+pub use meta::{Histogram, MetaSource, PhotoMeta};
 pub use orient::apply_orientation;
 pub use pipeline::{FileInfo, Pipeline, ThumbResult};
 pub use probe::ImageFormat;
@@ -37,6 +41,8 @@ pub enum Error {
     Decode(String),
     #[error("编码失败：{0}")]
     Encode(String),
+    #[error("索引：{0}")]
+    Index(String),
     #[error("参数非法：{0}")]
     Invalid(String),
 }

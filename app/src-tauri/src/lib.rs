@@ -1,5 +1,7 @@
 use albumio_core::cache::Level;
-use albumio_core::{EntryStat, FileInfo, ListEntry, Listing, Pipeline, Priority};
+use albumio_core::{
+    EntryStat, FileInfo, Index, IndexStatus, ListEntry, Listing, PhotoMeta, Pipeline, Priority,
+};
 use serde::Serialize;
 use std::io;
 use std::path::{Path, PathBuf};
@@ -7,6 +9,9 @@ use std::time::Instant;
 use tauri::Manager;
 
 pub struct DataDir(pub PathBuf);
+
+/// 索引是旁路：打不开就为 None，浏览/看图/编辑/导出一切照常（folder-first）。
+pub struct IndexState(pub Option<Index>);
 
 /// 启动时传入的目录（`albumio <dir>`）。M9 的"默认打开方式"也走这条路。
 pub struct StartDir(pub Option<String>);
@@ -106,6 +111,37 @@ fn albumio_stat(
     })
 }
 
+/// 检查器数据：EXIF/XMP 合并结果 + 直方图。顺带写索引（失败只记日志，不影响返回）。
+#[tauri::command]
+fn albumio_meta(
+    pipeline: tauri::State<Pipeline>,
+    index: tauri::State<IndexState>,
+    path: String,
+) -> Result<PhotoMeta, String> {
+    let p = Path::new(&path);
+    let mut meta = albumio_core::meta::read(p).map_err(|e| e.to_string())?;
+    // 直方图用 L1 代理：像素已在管线里转过 sRGB，符合 `02-设计规范.md` §11.3 口径。
+    if let Ok(thumb) = pipeline.thumbnail(p, Level::L1) {
+        if let Ok(hist) = albumio_core::meta::histogram_webp(&thumb.bytes) {
+            meta.histogram = hist;
+        }
+    }
+    if let Some(idx) = &index.0 {
+        if let Err(e) = idx.upsert(&meta) {
+            eprintln!("[index] 写入失败（不影响看图）：{e}");
+        }
+    }
+    Ok(meta)
+}
+
+#[tauri::command]
+fn albumio_index_status(index: tauri::State<IndexState>) -> IndexStatus {
+    match &index.0 {
+        Some(idx) => idx.status().unwrap_or_default(),
+        None => IndexStatus::default(),
+    }
+}
+
 /// 启动目录：命令行第一个参数是存在的目录就用它，否则返回 null（前端回退到"图片"目录）。
 #[tauri::command]
 fn albumio_start_dir(start: tauri::State<StartDir>) -> Option<String> {
@@ -121,10 +157,18 @@ pub fn run() {
                 .map_err(|e| io::Error::other(format!("缩略图缓存初始化失败：{e}")))?;
             let _ = pipeline.sweep();
             let start = std::env::args().nth(1).filter(|p| Path::new(p).is_dir());
+            let index = match Index::open(dir.join("index.db")) {
+                Ok(idx) => Some(idx),
+                Err(e) => {
+                    eprintln!("[index] 打不开（将按无索引运行）：{e}");
+                    None
+                }
+            };
             app.manage(DataDir(dir));
             app.manage(StartDir(start));
             app.manage(pipeline);
             app.manage(Listing::new());
+            app.manage(IndexState(index));
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -132,6 +176,8 @@ pub fn run() {
             albumio_thumb,
             albumio_list,
             albumio_stat,
+            albumio_meta,
+            albumio_index_status,
             albumio_start_dir
         ])
         .run(tauri::generate_context!())

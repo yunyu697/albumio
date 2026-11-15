@@ -1,6 +1,9 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Icon, IconSprite } from "./icons";
+import Inspector from "./components/Inspector";
+import type { PhotoMeta } from "./data/meta";
 import Browse, { type GridStatus } from "./screens/Browse";
+import { isComposing, isTextInput } from "./keys";
 
 const EMPTY_STATUS: GridStatus = {
   dir: "",
@@ -10,7 +13,9 @@ const EMPTY_STATUS: GridStatus = {
   statsComplete: false,
   cell: 128,
   currentName: null,
+  currentPath: null,
   currentSize: null,
+  currentRating: null,
 };
 
 function formatBytes(n: number): string {
@@ -25,16 +30,45 @@ function formatBytes(n: number): string {
   return `${v >= 100 ? v.toFixed(0) : v.toFixed(1)} ${units[i]}`;
 }
 
+/** 墙上时间：EXIF/XMP 给的是"拍摄地时间"，直接用；推断值用本机 mtime 格式化。 */
+function formatLocal(ms: number): string {
+  const d = new Date(ms);
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(
+    d.getMinutes()
+  )}`;
+}
+
 export default function App() {
   const [cellIdx, setCellIdx] = useState(2);
   const [status, setStatus] = useState<GridStatus>(EMPTY_STATUS);
+  const [meta, setMeta] = useState<PhotoMeta | null>(null);
+  const [inspectorOpen, setInspectorOpen] = useState(true);
 
   // Browse 的状态回传每帧都可能触发；内容相同就不换引用，避免自激重渲染。
   const onStatus = useCallback((s: GridStatus) => {
     setStatus((prev) => (JSON.stringify(prev) === JSON.stringify(s) ? prev : s));
   }, []);
 
+  // Ctrl+I：显示/隐藏检查器（§10.2；刻意不用 Ctrl+Shift+I，避免撞 DevTools）
+  useEffect(() => {
+    const onKeyDown = (ev: KeyboardEvent) => {
+      if (!(ev.ctrlKey || ev.metaKey) || ev.shiftKey || ev.altKey) return;
+      if (ev.key.toLowerCase() !== "i") return;
+      if (isComposing(ev) || isTextInput(ev.target)) return;
+      ev.preventDefault();
+      setInspectorOpen((v) => !v);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
+
   const currentExt = status.currentName?.split(".").pop()?.toUpperCase() ?? "";
+  const takenLabel = meta
+    ? `${meta.takenAtText ?? formatLocal(meta.takenAt)}${
+        meta.takenSource === "inferred" ? "（推断）" : ""
+      }`
+    : "—";
 
   return (
     <div className="app" data-screen="browse">
@@ -164,7 +198,7 @@ export default function App() {
           onCellIdxChange={setCellIdx}
           onStatus={onStatus}
         />
-        <aside className="inspector">
+        <aside className="inspector" hidden={!inspectorOpen}>
           <div className="rail insp-rail">
             <button className="ibtn" title="展开检查器" data-tip="">
               <Icon id="i-panel-right" />
@@ -173,7 +207,11 @@ export default function App() {
               </span>
             </button>
           </div>
-          <div className="insp-scroll" />
+          <Inspector
+            path={status.currentPath}
+            rating={status.currentRating}
+            onMeta={setMeta}
+          />
         </aside>
       </div>
 
@@ -189,10 +227,12 @@ export default function App() {
         <div className="sb-mid" style={{ marginLeft: "var(--ds-space-5)" }}>
           <span className="sb-sep" />
           <span className="name">{status.currentName ?? "—"}</span>
-          <span className="sb-num">—</span>
-          <span>{currentExt || "—"}</span>
-          <span className="sb-num">{formatBytes(status.currentSize ?? 0)}</span>
-          <span>—</span>
+          <span className="sb-num">
+            {meta?.width && meta?.height ? `${meta.width}×${meta.height}` : "—"}
+          </span>
+          <span>{meta ? meta.format.toUpperCase() : currentExt || "—"}</span>
+          <span className="sb-num">{formatBytes(meta?.size ?? status.currentSize ?? 0)}</span>
+          <span>{takenLabel}</span>
         </div>
         <div className="sb-right">
           <span>索引 <span className="sb-num">{status.statsComplete ? status.total : 0} / {status.total}</span></span>

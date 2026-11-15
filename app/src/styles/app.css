@@ -27,6 +27,7 @@
   --lv-winbtn-w: 46px;
   --lv-winbtn-h: var(--ds-control-h-lg);
   --lv-rail-w: 40px;
+  --lv-histogram-h: 64px;
 }
 
 * { box-sizing: border-box; }
@@ -386,6 +387,8 @@ input[type=range].lr::-moz-range-thumb {
   border-left: var(--ds-border-hairline) solid var(--ds-color-line);
   overflow: hidden;
 }
+/* `.inspector` 的 display:flex 会盖掉 UA 的 [hidden]，必须显式关掉（Ctrl+I）。 */
+.inspector[hidden] { display: none; }
 .inspector::after {
   content: "";
   position: absolute;
@@ -397,6 +400,120 @@ input[type=range].lr::-moz-range-thumb {
   background: linear-gradient(to bottom, transparent, var(--ds-color-surface));
 }
 .insp-scroll { flex: 1; overflow-y: auto; padding: var(--ds-space-5); }
+.insp-preview {
+  height: 128px;
+  background: var(--ds-color-canvas);
+  border-radius: var(--ds-radius-sm);
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+}
+.insp-preview img { max-width: 100%; max-height: 100%; object-fit: contain; display: block; }
+.insp-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: var(--ds-space-7);
+  margin-bottom: var(--ds-space-3);
+  font-size: var(--ds-font-size-11);
+  font-weight: var(--ds-font-weight-600);
+  color: var(--ds-color-text-2);
+}
+.insp-title .i { color: var(--ds-color-text-muted); }
+.src-tag {
+  font-family: var(--ds-font-mono);
+  font-size: var(--ds-font-size-10);
+  font-weight: var(--ds-font-weight-400);
+  color: var(--ds-color-text-muted);
+  background: var(--ds-color-surface-2);
+  height: var(--ds-control-h-xs);
+  padding: 0 var(--ds-space-2);
+  border-radius: var(--ds-radius-tag);
+  display: inline-flex;
+  align-items: center;
+  flex: none;
+  margin-left: var(--ds-space-2);
+}
+.field {
+  height: var(--ds-row-h-sm);
+  display: flex;
+  align-items: center;
+  gap: var(--ds-space-4);
+  font-size: var(--ds-font-size-12);
+}
+.field-k {
+  width: 72px;
+  flex: none;
+  color: var(--ds-color-text-muted);
+  font-size: var(--ds-font-size-11);
+  white-space: nowrap;
+}
+.field-v {
+  flex: 1;
+  min-width: 0;
+  text-align: right;
+  color: var(--ds-color-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.field-v.mono {
+  font-family: var(--ds-font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--ds-font-size-11);
+}
+.field-v.key {
+  font-size: var(--ds-font-size-13);
+  font-weight: var(--ds-font-weight-500);
+  font-family: var(--ds-font-mono);
+}
+.hist {
+  height: var(--lv-histogram-h);
+  background: var(--ds-color-surface-2);
+  border-radius: var(--ds-radius-sm);
+  display: flex;
+  align-items: flex-end;
+  gap: 1px;
+  padding: var(--ds-space-2);
+  overflow: hidden;
+  position: relative;
+}
+.hist i {
+  flex: 1;
+  background: var(--ds-color-accent);
+  opacity: 0.45;
+  border-radius: var(--ds-radius-hairline) var(--ds-radius-hairline) 0 0;
+}
+/* RGB 三通道各 12% 叠加（§11.3），三层叠出设计稿的单层观感。 */
+.hist-layer {
+  position: absolute;
+  inset: var(--ds-space-2);
+  display: flex;
+  align-items: flex-end;
+  gap: 1px;
+  opacity: 0.12;
+}
+.hint {
+  font-size: var(--ds-font-size-10);
+  color: var(--ds-color-text-muted);
+  margin-top: var(--ds-space-2);
+  line-height: var(--ds-leading-snug);
+}
+.tagrow { display: flex; flex-wrap: wrap; gap: var(--ds-space-2); padding-top: var(--ds-space-1); }
+.chip {
+  height: var(--ds-control-h-xs);
+  padding: 0 var(--ds-space-3);
+  display: flex;
+  align-items: center;
+  gap: var(--ds-space-1);
+  border-radius: var(--ds-radius-tag);
+  background: var(--ds-color-surface-2);
+  color: var(--ds-color-text-2);
+  font-size: var(--ds-font-size-11);
+  border: var(--ds-border-hairline) solid transparent;
+}
+.chip.add { color: var(--ds-color-text-muted); }
+.chip:hover { border-color: var(--ds-color-line-strong); color: var(--ds-color-text); }
 
 /* 状态栏 */
 .statusbar {

@@ -29,7 +29,9 @@ export interface GridStatus {
   statsComplete: boolean;
   cell: number;
   currentName: string | null;
+  currentPath: string | null;
   currentSize: number | null;
+  currentRating: number | null;
 }
 
 interface BrowseProps {
@@ -441,9 +443,11 @@ export default function Browse({ cellIdx, onCellIdxChange, onStatus }: BrowsePro
       statsComplete: total > 0 && known >= total,
       cell: CELLS[cellIdx - 1],
       currentName: currentEntry?.name ?? null,
+      currentPath: current,
       currentSize: current ? statsRef.current.get(current)?.size ?? null : null,
+      currentRating: current ? ratings.get(current) ?? null : null,
     });
-  }, [entries, selected, cellIdx, dir, current, onStatus, thumbTick]);
+  }, [entries, selected, cellIdx, dir, current, ratings, onStatus, thumbTick]);
 
   return (
     <Grid
