@@ -10,10 +10,15 @@ pub fn encode_lossless(rgba: &[u8], w: u32, h: u32) -> Result<Vec<u8>> {
 
 /// 有损 WebP，固定 q80；`use_sharp_yuv` 减少 4:2:0 色度在硬边的彩边。
 pub fn encode_q80(rgba: &[u8], w: u32, h: u32) -> Result<Vec<u8>> {
+    encode_webp(rgba, w, h, 80)
+}
+
+/// 有损 WebP，质量由调用方给（批量处理的质量滑杆）。
+pub fn encode_webp(rgba: &[u8], w: u32, h: u32, quality: u8) -> Result<Vec<u8>> {
     let encoder = webp::Encoder::from_rgba(rgba, w, h);
     let mut config =
         webp::WebPConfig::new().map_err(|_| Error::Encode("WebPConfig 初始化失败".into()))?;
-    config.quality = 80.0;
+    config.quality = quality.clamp(1, 100) as f32;
     config.use_sharp_yuv = 1;
     let out = encoder
         .encode_advanced(&config)
@@ -23,6 +28,11 @@ pub fn encode_q80(rgba: &[u8], w: u32, h: u32) -> Result<Vec<u8>> {
 
 /// JPEG q90（导出副本；`01-方案文档.md` §5.4 的默认参数）。
 pub fn encode_jpeg_q90(rgba: &[u8], w: u32, h: u32) -> Result<Vec<u8>> {
+    encode_jpeg(rgba, w, h, 90)
+}
+
+/// JPEG，质量由调用方给。
+pub fn encode_jpeg(rgba: &[u8], w: u32, h: u32, quality: u8) -> Result<Vec<u8>> {
     use image::codecs::jpeg::JpegEncoder;
     use image::ExtendedColorType;
     // JPEG 不支持 alpha：去掉第 4 通道（编辑不产生透明区域）。
@@ -31,9 +41,20 @@ pub fn encode_jpeg_q90(rgba: &[u8], w: u32, h: u32) -> Result<Vec<u8>> {
         .flat_map(|px| [px[0], px[1], px[2]])
         .collect();
     let mut out = Vec::new();
-    let mut enc = JpegEncoder::new_with_quality(&mut out, 90);
+    let mut enc = JpegEncoder::new_with_quality(&mut out, quality.clamp(1, 100));
     enc.encode(&rgb, w, h, ExtendedColorType::Rgb8)
         .map_err(|e| Error::Encode(format!("JPEG 编码失败：{e}")))?;
+    Ok(out)
+}
+
+/// PNG（批量转换的目标格式之一）。
+pub fn encode_png(rgba: &[u8], w: u32, h: u32) -> Result<Vec<u8>> {
+    use image::codecs::png::PngEncoder;
+    use image::{ExtendedColorType, ImageEncoder};
+    let mut out = Vec::new();
+    PngEncoder::new(&mut out)
+        .write_image(rgba, w, h, ExtendedColorType::Rgba8)
+        .map_err(|e| Error::Encode(format!("PNG 编码失败：{e}")))?;
     Ok(out)
 }
 

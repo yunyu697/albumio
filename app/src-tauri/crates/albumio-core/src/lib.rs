@@ -4,6 +4,7 @@
 //! 应用 EXIF Orientation → 色彩转换到 sRGB → 编码 WebP。缩略图永远从原图解码，
 //! 不复用上一级缩略图。
 
+pub mod batch;
 pub mod cache;
 pub mod color;
 pub mod decode;
@@ -22,6 +23,7 @@ pub mod thumb;
 #[cfg(windows)]
 pub mod wic;
 
+pub use batch::{BatchOptions, BatchOutcome, BatchPlan, BatchPlanItem, BatchSource};
 pub use cache::{Cache, Level, PIPELINE_VERSION};
 pub use decode::DecodedImage;
 pub use index::{Index, IndexStatus, SCHEMA_VERSION};
