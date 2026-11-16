@@ -70,9 +70,11 @@ jobs:
           sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libssl-dev liblcms2-dev libfuse2 cmake libde265-dev libwebp-dev pkg-config
       - name: 安装 macOS HEIC 构建工具
         if: matrix.platform == 'macos'
-        # 只装工具链：libde265/libjpeg-turbo/libwebp 由下一步自行编成双架构 fat 库。
-        # 直接用 Homebrew 的单架构（arm64）包，universal 的 x86_64 那一遍会在链接时报架构不匹配。
-        run: brew install cmake pkg-config nasm
+        # 只补 pkg-config（system-deps 用）与 nasm（libjpeg-turbo 的 x86_64 SIMD）。
+        # 不再 `brew install cmake`：它会把镜像里的 cmake 升到 4.x，而 libde265 的
+        # cmake_minimum_required(3.3.2) 在 4.x 下直接报错；配置时另加
+        # -DCMAKE_POLICY_VERSION_MINIMUM=3.5 兜底（镜像以后升到 4.x 也不会再撞）。
+        run: brew install pkg-config nasm
       - name: 编译 universal2 解码依赖（libde265 / libjpeg-turbo / libwebp）
         if: matrix.platform == 'macos'
         shell: bash
@@ -92,6 +94,7 @@ jobs:
             arch="$1"; minver="$2"; pre="$SRC/$arch"
             cmake -S "$SRC/libde265-1.0.15" -B "$pre/build-de265" \
               -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX="$pre/install" \
+              -DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
               -DCMAKE_INSTALL_LIBDIR=lib -DCMAKE_OSX_ARCHITECTURES="$arch" \
               -DCMAKE_OSX_DEPLOYMENT_TARGET="$minver" \
               -DENABLE_SDL=OFF -DBUILD_SHARED_LIBS=OFF
@@ -100,6 +103,7 @@ jobs:
 
             cmake -S "$SRC/libjpeg-turbo-3.0.4" -B "$pre/build-jpeg" \
               -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX="$pre/install" \
+              -DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
               -DCMAKE_INSTALL_LIBDIR=lib -DCMAKE_OSX_ARCHITECTURES="$arch" \
               -DCMAKE_OSX_DEPLOYMENT_TARGET="$minver" \
               -DENABLE_SHARED=OFF -DWITH_TURBOJPEG=OFF -DWITH_SIMD=1
@@ -108,6 +112,7 @@ jobs:
 
             cmake -S "$SRC/libwebp-1.4.0" -B "$pre/build-webp" \
               -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX="$pre/install" \
+              -DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
               -DCMAKE_INSTALL_LIBDIR=lib -DCMAKE_OSX_ARCHITECTURES="$arch" \
               -DCMAKE_OSX_DEPLOYMENT_TARGET="$minver" -DBUILD_SHARED_LIBS=OFF \
               -DWEBP_BUILD_ANIM_UTILS=OFF -DWEBP_BUILD_CWEBP=OFF -DWEBP_BUILD_DWEBP=OFF \
