@@ -1,6 +1,6 @@
 [package]
 name = "albumio"
-version = "1.0.0-RC3"
+version = "1.0.0-RC4"
 description = "Albumio · 目录优先的跨平台图片浏览器"
 edition = "2021"
 rust-version = "1.77"
