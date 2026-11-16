@@ -112,14 +112,15 @@ pub fn decode_file(path: &Path, target_edge: Option<u32>) -> Result<DecodedImage
 /// ICC 暂不抽取（HEIC 少见非 sRGB，后续需要时再补）。
 #[cfg(not(target_os = "windows"))]
 fn decode_heic(bytes: &[u8]) -> Result<DecodedImage> {
-    use libheif_rs::{ColorSpace, HeifContext, RgbChroma};
+    use libheif_rs::{ColorSpace, HeifContext, LibHeif, RgbChroma};
 
     let ctx = HeifContext::read_from_bytes(bytes).map_err(|e| Error::Decode(e.to_string()))?;
     let handle = ctx
         .primary_image_handle()
         .map_err(|e| Error::Decode(e.to_string()))?;
     let (width, height) = (handle.width(), handle.height());
-    let image = ctx
+    // 2.x 里 `decode` 挂在 `LibHeif` 上（不是 `HeifContext`）。
+    let image = LibHeif::new()
         .decode(&handle, ColorSpace::Rgb(RgbChroma::Rgba), None)
         .map_err(|e| Error::Decode(e.to_string()))?;
     let planes = image.planes();
