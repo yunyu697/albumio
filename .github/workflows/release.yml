@@ -68,9 +68,89 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libssl-dev liblcms2-dev libfuse2 cmake libde265-dev libwebp-dev pkg-config
-      - name: 安装 macOS HEIC 构建依赖（内置 libheif）
+      - name: 安装 macOS HEIC 构建工具
         if: matrix.platform == 'macos'
-        run: brew install cmake libde265 webp pkg-config
+        # 只装工具链：libde265/libjpeg-turbo/libwebp 由下一步自行编成双架构 fat 库。
+        # 直接用 Homebrew 的单架构（arm64）包，universal 的 x86_64 那一遍会在链接时报架构不匹配。
+        run: brew install cmake pkg-config nasm
+      - name: 编译 universal2 解码依赖（libde265 / libjpeg-turbo / libwebp）
+        if: matrix.platform == 'macos'
+        shell: bash
+        run: |
+          set -euo pipefail
+          SRC="$RUNNER_TEMP/heic-deps/src"
+          OUT="$RUNNER_TEMP/heic-deps/prefix"
+          mkdir -p "$SRC" "$OUT/lib/pkgconfig" "$OUT/include"
+
+          curl -fsSL "https://github.com/strukturag/libde265/releases/download/v1.0.15/libde265-1.0.15.tar.gz" -o "$SRC/libde265.tar.gz"
+          curl -fsSL "https://github.com/libjpeg-turbo/libjpeg-turbo/releases/download/3.0.4/libjpeg-turbo-3.0.4.tar.gz" -o "$SRC/libjpeg-turbo.tar.gz"
+          curl -fsSL "https://storage.googleapis.com/downloads.webmproject.org/releases/webp/libwebp-1.4.0.tar.gz" -o "$SRC/libwebp.tar.gz"
+          for t in libde265 libjpeg-turbo libwebp; do tar -xzf "$SRC/$t.tar.gz" -C "$SRC"; done
+
+          # 两个架构分别编（部署目标随架构不同），随后 lipo 合并成 fat 静态库。
+          build_arch() {
+            arch="$1"; minver="$2"; pre="$SRC/$arch"
+            cmake -S "$SRC/libde265-1.0.15" -B "$pre/build-de265" \
+              -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX="$pre/install" \
+              -DCMAKE_INSTALL_LIBDIR=lib -DCMAKE_OSX_ARCHITECTURES="$arch" \
+              -DCMAKE_OSX_DEPLOYMENT_TARGET="$minver" \
+              -DENABLE_SDL=OFF -DBUILD_SHARED_LIBS=OFF
+            cmake --build "$pre/build-de265" --parallel
+            cmake --install "$pre/build-de265"
+
+            cmake -S "$SRC/libjpeg-turbo-3.0.4" -B "$pre/build-jpeg" \
+              -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX="$pre/install" \
+              -DCMAKE_INSTALL_LIBDIR=lib -DCMAKE_OSX_ARCHITECTURES="$arch" \
+              -DCMAKE_OSX_DEPLOYMENT_TARGET="$minver" \
+              -DENABLE_SHARED=OFF -DWITH_TURBOJPEG=OFF -DWITH_SIMD=1
+            cmake --build "$pre/build-jpeg" --parallel
+            cmake --install "$pre/build-jpeg"
+
+            cmake -S "$SRC/libwebp-1.4.0" -B "$pre/build-webp" \
+              -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX="$pre/install" \
+              -DCMAKE_INSTALL_LIBDIR=lib -DCMAKE_OSX_ARCHITECTURES="$arch" \
+              -DCMAKE_OSX_DEPLOYMENT_TARGET="$minver" -DBUILD_SHARED_LIBS=OFF \
+              -DWEBP_BUILD_ANIM_UTILS=OFF -DWEBP_BUILD_CWEBP=OFF -DWEBP_BUILD_DWEBP=OFF \
+              -DWEBP_BUILD_GIF2WEBP=OFF -DWEBP_BUILD_IMG2WEBP=OFF -DWEBP_BUILD_VWEBP=OFF \
+              -DWEBP_BUILD_WEBPINFO=OFF -DWEBP_BUILD_WEBPMUX=OFF -DWEBP_BUILD_EXTRAS=OFF
+            cmake --build "$pre/build-webp" --parallel
+            cmake --install "$pre/build-webp"
+          }
+          build_arch arm64 11.0
+          build_arch x86_64 10.12
+
+          cp -R "$SRC/arm64/install/include/." "$OUT/include/"
+          for lib in "$SRC"/arm64/install/lib/*.a; do
+            name="$(basename "$lib")"
+            lipo -create "$lib" "$SRC/x86_64/install/lib/$name" -output "$OUT/lib/$name"
+          done
+          cp "$SRC"/arm64/install/lib/pkgconfig/*.pc "$OUT/lib/pkgconfig/"
+          sed -i '' "s#^prefix=.*#prefix=$OUT#" "$OUT"/lib/pkgconfig/*.pc
+
+          # libde265 的 CMake 安装不一定带 .pc；缺了就补一份，libheif.pc 的 Requires.private 要靠它解析。
+          if [ ! -f "$OUT/lib/pkgconfig/libde265.pc" ]; then
+            {
+              echo "prefix=$OUT"
+              echo 'exec_prefix=${prefix}'
+              echo 'libdir=${prefix}/lib'
+              echo 'includedir=${prefix}/include'
+              echo ''
+              echo 'Name: libde265'
+              echo 'Description: Open h.265 video codec implementation.'
+              echo 'Version: 1.0.15'
+              echo 'Libs: -L${libdir} -lde265'
+              echo 'Cflags: -I${includedir}'
+            } > "$OUT/lib/pkgconfig/libde265.pc"
+          fi
+
+          lipo -info "$OUT/lib/libde265.a"
+          # libheif-sys 交叉编 x86_64 时 pkg-config 默认拒绝；这些 .pc 指向的正是上面编好的 fat 库，
+          # CMAKE_PREFIX_PATH 让 libheif 的 CMake 也优先找同一份。
+          {
+            echo "PKG_CONFIG_ALLOW_CROSS=1"
+            echo "CMAKE_PREFIX_PATH=$OUT"
+            echo "PKG_CONFIG_PATH=$OUT/lib/pkgconfig"
+          } >> "$GITHUB_ENV"
       - run: npm ci
         working-directory: app
       - name: 注入版本（package.json → tauri.conf.json / Cargo.toml）
