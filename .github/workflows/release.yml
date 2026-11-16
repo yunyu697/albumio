@@ -151,10 +151,14 @@ jobs:
           lipo -info "$OUT/lib/libde265.a"
           # libheif-sys 交叉编 x86_64 时 pkg-config 默认拒绝；这些 .pc 指向的正是上面编好的 fat 库，
           # CMAKE_PREFIX_PATH 让 libheif 的 CMake 也优先找同一份。
+          # LCMS2_STATIC：lcms2-sys 默认走 pkg-config，在 macOS 上会链到 Homebrew 的单架构
+          # liblcms2.dylib（x86_64 那一遍直接符号缺失，且产物在没装 brew 的机器上也起不来）；
+          # 置位后改用 crate 自带源码静态编译。
           {
             echo "PKG_CONFIG_ALLOW_CROSS=1"
             echo "CMAKE_PREFIX_PATH=$OUT"
             echo "PKG_CONFIG_PATH=$OUT/lib/pkgconfig"
+            echo "LCMS2_STATIC=1"
           } >> "$GITHUB_ENV"
       - run: npm ci
         working-directory: app
