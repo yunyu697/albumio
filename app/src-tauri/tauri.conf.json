@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "albumio",
-  "version": "1.0.0-alpha1",
+  "version": "1.0.0-RC1",
   "identifier": "com.albumio.app",
   "build": {
     "beforeDevCommand": "npm run dev",
@@ -51,7 +51,11 @@
     "longDescription": "Albumio 是目录优先的跨平台图片浏览器：删掉索引数据库也能正常浏览、看图、编辑与导出。",
     "fileAssociations": [
       {
-        "ext": ["jpg", "jpeg", "jpe"],
+        "ext": [
+          "jpg",
+          "jpeg",
+          "jpe"
+        ],
         "name": "JPEG image",
         "description": "JPEG image",
         "role": "Viewer",
@@ -59,7 +63,9 @@
         "mimeType": "image/jpeg"
       },
       {
-        "ext": ["png"],
+        "ext": [
+          "png"
+        ],
         "name": "PNG image",
         "description": "PNG image",
         "role": "Viewer",
@@ -67,7 +73,9 @@
         "mimeType": "image/png"
       },
       {
-        "ext": ["webp"],
+        "ext": [
+          "webp"
+        ],
         "name": "WebP image",
         "description": "WebP image",
         "role": "Viewer",
@@ -75,7 +83,12 @@
         "mimeType": "image/webp"
       },
       {
-        "ext": ["heic", "heif", "heics", "heifs"],
+        "ext": [
+          "heic",
+          "heif",
+          "heics",
+          "heifs"
+        ],
         "name": "HEIF image",
         "description": "HEIF image",
         "role": "Viewer",
@@ -83,7 +96,10 @@
         "mimeType": "image/heic"
       },
       {
-        "ext": ["tif", "tiff"],
+        "ext": [
+          "tif",
+          "tiff"
+        ],
         "name": "TIFF image",
         "description": "TIFF image",
         "role": "Viewer",
@@ -91,7 +107,9 @@
         "mimeType": "image/tiff"
       },
       {
-        "ext": ["bmp"],
+        "ext": [
+          "bmp"
+        ],
         "name": "BMP image",
         "description": "BMP image",
         "role": "Viewer",
@@ -99,7 +117,9 @@
         "mimeType": "image/bmp"
       },
       {
-        "ext": ["gif"],
+        "ext": [
+          "gif"
+        ],
         "name": "GIF image",
         "description": "GIF image",
         "role": "Viewer",
@@ -107,7 +127,9 @@
         "mimeType": "image/gif"
       },
       {
-        "ext": ["avif"],
+        "ext": [
+          "avif"
+        ],
         "name": "AVIF image",
         "description": "AVIF image",
         "role": "Viewer",
