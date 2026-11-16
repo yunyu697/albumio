@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { Icon, IconSprite } from "./icons";
 import Inspector from "./components/Inspector";
 import { Sidebar } from "./components/Sidebar";
@@ -102,6 +103,15 @@ export default function App() {
       list.push(path);
       return { list, i: list.length - 1 };
     });
+  }, []);
+
+  /** M9：自绘标题栏（decorations=false）必须自己接窗口动作，否则按钮是死的。 */
+  const windowAction = useCallback((action: "minimize" | "toggleMaximize" | "close") => {
+    if (!isTauri()) return;
+    const w = getCurrentWindow();
+    if (action === "minimize") void w.minimize();
+    else if (action === "toggleMaximize") void w.toggleMaximize();
+    else void w.close();
   }, []);
 
   /** 打开一个外部路径：目录直接进；文件进父目录并在看图里定位（M9 拖放/关联）。 */
@@ -249,12 +259,12 @@ export default function App() {
       <IconSprite />
 
       {/* 标题栏 */}
-      <header className="titlebar">
-        <div className="brand">
-          <span className="brand-mark">
+      <header className="titlebar" data-tauri-drag-region>
+        <div className="brand" data-tauri-drag-region>
+          <span className="brand-mark" data-tauri-drag-region>
             <Icon id="i-image" size="sm" />
           </span>
-          <span className="brand-name">Albumio</span>
+          <span className="brand-name" data-tauri-drag-region>Albumio</span>
         </div>
         <nav className="crumbs">
           {crumbs.map((c, i) => (
@@ -270,15 +280,15 @@ export default function App() {
             </span>
           ))}
         </nav>
-        <div className="titlebar-pad" />
+        <div className="titlebar-pad" data-tauri-drag-region />
         <div className="winbtns">
-          <button className="winbtn" title="最小化">
+          <button className="winbtn" title="最小化" onClick={() => windowAction("minimize")}>
             <Icon id="i-minus" size="xs" />
           </button>
-          <button className="winbtn" title="最大化">
+          <button className="winbtn" title="最大化" onClick={() => windowAction("toggleMaximize")}>
             <Icon id="i-maximize" size="xs" />
           </button>
-          <button className="winbtn close" title="关闭">
+          <button className="winbtn close" title="关闭" onClick={() => windowAction("close")}>
             <Icon id="i-x" size="xs" />
           </button>
         </div>

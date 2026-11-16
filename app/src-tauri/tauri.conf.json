@@ -52,64 +52,64 @@
     "fileAssociations": [
       {
         "ext": ["jpg", "jpeg", "jpe"],
-        "name": "JPEG 图片",
-        "description": "JPEG 图片",
+        "name": "JPEG image",
+        "description": "JPEG image",
         "role": "Viewer",
         "rank": "Alternate",
         "mimeType": "image/jpeg"
       },
       {
         "ext": ["png"],
-        "name": "PNG 图片",
-        "description": "PNG 图片",
+        "name": "PNG image",
+        "description": "PNG image",
         "role": "Viewer",
         "rank": "Alternate",
         "mimeType": "image/png"
       },
       {
         "ext": ["webp"],
-        "name": "WebP 图片",
-        "description": "WebP 图片",
+        "name": "WebP image",
+        "description": "WebP image",
         "role": "Viewer",
         "rank": "Alternate",
         "mimeType": "image/webp"
       },
       {
         "ext": ["heic", "heif", "heics", "heifs"],
-        "name": "HEIF 图片",
-        "description": "HEIF 图片",
+        "name": "HEIF image",
+        "description": "HEIF image",
         "role": "Viewer",
         "rank": "Alternate",
         "mimeType": "image/heic"
       },
       {
         "ext": ["tif", "tiff"],
-        "name": "TIFF 图片",
-        "description": "TIFF 图片",
+        "name": "TIFF image",
+        "description": "TIFF image",
         "role": "Viewer",
         "rank": "Alternate",
         "mimeType": "image/tiff"
       },
       {
         "ext": ["bmp"],
-        "name": "BMP 图片",
-        "description": "BMP 图片",
+        "name": "BMP image",
+        "description": "BMP image",
         "role": "Viewer",
         "rank": "Alternate",
         "mimeType": "image/bmp"
       },
       {
         "ext": ["gif"],
-        "name": "GIF 图片",
-        "description": "GIF 图片",
+        "name": "GIF image",
+        "description": "GIF image",
         "role": "Viewer",
         "rank": "Alternate",
         "mimeType": "image/gif"
       },
       {
         "ext": ["avif"],
-        "name": "AVIF 图片",
-        "description": "AVIF 图片",
+        "name": "AVIF image",
+        "description": "AVIF image",
         "role": "Viewer",
         "rank": "Alternate",
         "mimeType": "image/avif"
