@@ -1,0 +1,12 @@
+{
+  "packageName": "com.albumio.app",
+  "publisher": "CN=Albumio",
+  "publisherDisplayName": "Albumio",
+  "displayName": "Albumio",
+  "version": "1.0.0.0",
+  "applicationId": "Albumio",
+  "verbId": "AlbumioOpen",
+  "executable": "albumio.exe",
+  "dllName": "AlbumioShell.dll",
+  "clsid": "8c1e7b52-3d4a-4f6b-9a21-5e6f0c7d8a13"
+}

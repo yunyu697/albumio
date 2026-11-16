@@ -9,7 +9,8 @@
     "preview": "vite preview",
     "test:unit": "node --test src/data/*.test.ts",
     "tauri": "tauri",
-    "build:portable": "node ../scripts/portable.mjs"
+    "build:portable": "node ../scripts/portable.mjs",
+    "build:shell": "powershell -NoProfile -ExecutionPolicy Bypass -File windows-shell/build.ps1"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.1.1",
