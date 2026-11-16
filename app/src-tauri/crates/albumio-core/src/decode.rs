@@ -1,12 +1,12 @@
 //! 解码：JPEG 走 zune-jpeg（全解码）/ jpeg-decoder（分数缩放解码），其余走 `image`；
-//! Windows 上 HEIC/AVIF/RAW 走系统 WIC（`docs/spike/S2-decoders.md`），其他平台仍返回
-//! 可判定的 Unsupported。
+//! Windows 上 HEIC/AVIF/RAW 走系统 WIC（`docs/spike/S2-decoders.md`）；
+//! macOS/Linux 的 HEIC 走内置 libheif（M9 决策），AVIF/RAW 仍返回可判定的 Unsupported。
 
 use crate::{Error, ImageFormat, Result};
 use std::io::Cursor;
 use std::path::Path;
 
-/// 这三类格式在 Windows 上交给 WIC，其余路径保持「明确不支持」。
+/// Windows 上这三类格式交给 WIC；macOS/Linux 只有 HEIC 走内置 libheif。
 pub fn uses_platform_codec(format: ImageFormat) -> bool {
     cfg!(windows) && matches!(format, ImageFormat::Heic | ImageFormat::Avif | ImageFormat::Raw)
 }
@@ -41,10 +41,22 @@ pub fn decode_bytes(
     let orientation = read_orientation(bytes, format);
     match format {
         ImageFormat::Jpeg => decode_jpeg(bytes, target_edge, orientation),
-        ImageFormat::Heic | ImageFormat::Avif | ImageFormat::Raw => Err(Error::Unsupported {
+        ImageFormat::Heic => {
+            #[cfg(not(target_os = "windows"))]
+            {
+                decode_heic(bytes)
+            }
+            #[cfg(target_os = "windows")]
+            {
+                Err(Error::Unsupported {
+                    format,
+                    reason: "Windows 上 HEIC 走系统 WIC（decode_file）".to_string(),
+                })
+            }
+        }
+        ImageFormat::Avif | ImageFormat::Raw => Err(Error::Unsupported {
             format,
             reason: match format {
-                ImageFormat::Heic => "libheif 未接入（见 docs/spike/S2.md）",
                 ImageFormat::Avif => "dav1d 未接入（04-项目计划 M1）",
                 _ => "rawler 未接入（04-项目计划 M1）",
             }
@@ -93,6 +105,47 @@ pub fn decode_file(path: &Path, target_edge: Option<u32>) -> Result<DecodedImage
 
     let bytes = std::fs::read(path)?;
     decode_bytes(&bytes, format, target_edge)
+}
+
+/// HEIC：macOS/Linux 用内置 libheif 解码成 RGBA。libheif 会应用 irot/imir 与裁剪，
+/// 所以 orientation 固定为 1（避免二次旋转）。色彩按文件内 nclx/sRGB 处理；
+/// ICC 暂不抽取（HEIC 少见非 sRGB，后续需要时再补）。
+#[cfg(not(target_os = "windows"))]
+fn decode_heic(bytes: &[u8]) -> Result<DecodedImage> {
+    use libheif_rs::{ColorSpace, HeifContext, RgbChroma};
+
+    let ctx = HeifContext::read_from_bytes(bytes).map_err(|e| Error::Decode(e.to_string()))?;
+    let handle = ctx
+        .primary_image_handle()
+        .map_err(|e| Error::Decode(e.to_string()))?;
+    let (width, height) = (handle.width(), handle.height());
+    let image = ctx
+        .decode(&handle, ColorSpace::Rgb(RgbChroma::Rgba), None)
+        .map_err(|e| Error::Decode(e.to_string()))?;
+    let planes = image.planes();
+    let plane = planes
+        .interleaved
+        .ok_or_else(|| Error::Decode("HEIC 解码结果没有交错 RGBA 平面".into()))?;
+
+    let row_bytes = width as usize * 4;
+    let mut rgba = Vec::with_capacity(row_bytes * height as usize);
+    for y in 0..height as usize {
+        let start = y * plane.stride;
+        let end = start + row_bytes;
+        if end > plane.data.len() {
+            return Err(Error::Decode("HEIC 平面尺寸与宽高不一致".into()));
+        }
+        rgba.extend_from_slice(&plane.data[start..end]);
+    }
+
+    Ok(DecodedImage {
+        format: ImageFormat::Heic,
+        width,
+        height,
+        rgba,
+        orientation: 1,
+        icc: None,
+    })
 }
 
 fn decode_jpeg(bytes: &[u8], target_edge: Option<u32>, orientation: u8) -> Result<DecodedImage> {
@@ -283,9 +336,10 @@ mod tests {
     }
 
     #[test]
-    fn unsupported_formats_are_reported_not_silent() {
-        let e = decode_bytes(&[], ImageFormat::Heic, None).unwrap_err();
-        assert!(matches!(e, Error::Unsupported { .. }));
+    fn broken_heic_errors_instead_of_panicking() {
+        // 空字节不是合法 ISOBMFF：Windows 走 WIC 前的 decode_bytes 分支应报 Unsupported，
+        // macOS/Linux 由 libheif 报解码错误——两边都必须是 Err，不能 panic。
+        assert!(decode_bytes(&[], ImageFormat::Heic, None).is_err());
     }
 
     #[test]

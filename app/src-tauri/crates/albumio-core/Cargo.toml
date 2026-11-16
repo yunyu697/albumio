@@ -37,5 +37,10 @@ windows = { version = "0.62", features = ["Win32_Foundation", "Win32_System_Com"
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
 
+# HEIC（M9 决策）：Windows 继续走系统 WIC；macOS/Linux 内置 libheif，静态编译随包分发。
+# `embedded-libheif` 需要 cmake、C++ 工具链与 libde265/libwebp 开发包，CI 安装步骤见 release.yml。
+[target.'cfg(not(target_os = "windows"))'.dependencies]
+libheif-rs = { version = "=2.3.0", features = ["embedded-libheif"] }
+
 [dev-dependencies]
 tempfile = "3"

@@ -67,7 +67,10 @@ jobs:
         if: matrix.platform == 'linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libssl-dev liblcms2-dev libfuse2
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libssl-dev liblcms2-dev libfuse2 cmake libde265-dev libwebp-dev pkg-config
+      - name: 安装 macOS HEIC 构建依赖（内置 libheif）
+        if: matrix.platform == 'macos'
+        run: brew install cmake libde265 webp pkg-config
       - run: npm ci
         working-directory: app
       - name: 注入版本（package.json → tauri.conf.json / Cargo.toml）
@@ -88,7 +91,7 @@ jobs:
             [ -n "${!k}" ] || missing="$missing $k"
           done
           if [ -n "$missing" ]; then
-            echo "::warning::缺少 Apple 凭据:$missing。本次产物未签名、未公证，Gatekeeper 会拦截；补齐 Secrets 后重跑。"
+            echo "::warning::缺少 Apple 凭据:$missing。按约定继续产出未签名/未公证包，Gatekeeper 会拦截；补齐 Secrets 后重跑即可。"
           else
             echo "Apple 凭据齐全：tauri build 会签名并提交 notarytool 公证。"
           fi
