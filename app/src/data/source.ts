@@ -53,6 +53,25 @@ export async function resolveTarget(path: string): Promise<LaunchTarget> {
   return invoke<LaunchTarget>("albumio_resolve_target", { path });
 }
 
+/**
+ * 单实例（M9）：取走第二实例暂存的目标。只在启动时调用一次；
+ * 取走即清空，避免与 `albumio://open-target` 事件重复打开。
+ */
+export async function takePendingTarget(): Promise<LaunchTarget> {
+  if (!isTauri()) return { dir: null, file: null };
+  try {
+    return await invoke<LaunchTarget>("albumio_take_pending");
+  } catch {
+    return { dir: null, file: null };
+  }
+}
+
+/** 剪贴板里已复制的文件（M9）。剪贴板不是文件时返回空；平台不支持时抛错。 */
+export async function clipboardFiles(): Promise<string[]> {
+  if (!isTauri()) return [];
+  return invoke<string[]>("albumio_clipboard_files");
+}
+
 /** 是否以管理员身份运行（Windows 管理员进程收不到 Explorer 拖放，R13）。 */
 export async function isElevated(): Promise<boolean> {
   if (!isTauri()) return false;

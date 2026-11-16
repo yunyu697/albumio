@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { listen } from "@tauri-apps/api/event";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { Icon, IconSprite } from "./icons";
@@ -6,7 +7,15 @@ import Inspector from "./components/Inspector";
 import { Sidebar } from "./components/Sidebar";
 import Toast, { type ToastData } from "./components/Toast";
 import type { PhotoMeta } from "./data/meta";
-import { isElevated, isTauri, launchTarget, resolveTarget } from "./data/source";
+import {
+  clipboardFiles,
+  isElevated,
+  isTauri,
+  launchTarget,
+  resolveTarget,
+  takePendingTarget,
+  type LaunchTarget,
+} from "./data/source";
 import { formatBytes } from "./format";
 import Browse, { type BrowseView, type GridStatus } from "./screens/Browse";
 import { isComposing, isTextInput } from "./keys";
@@ -114,37 +123,57 @@ export default function App() {
     else void w.close();
   }, []);
 
-  /** 打开一个外部路径：目录直接进；文件进父目录并在看图里定位（M9 拖放/关联）。 */
+  /** 落到一个「目录 + 可选文件」目标：目录直接进；文件进父目录并在看图里定位。 */
+  const openTarget = useCallback(
+    (t: LaunchTarget) => {
+      if (!t.dir) return;
+      openDir(t.dir);
+      if (!t.file) return;
+      if (!IMAGE_EXT.test(t.file)) {
+        notify("这个文件不是支持的图片格式", true);
+        return;
+      }
+      const file = t.file;
+      setOpenFile((prev) => ({ path: file, key: (prev?.key ?? 0) + 1 }));
+    },
+    [openDir, notify]
+  );
+
+  /** 打开一个外部路径（拖放/关联/剪贴板）：目录进目录，文件进父目录并在看图里定位。 */
   const openPath = useCallback(
     async (path: string) => {
       try {
-        const t = await resolveTarget(path);
-        if (!t.dir) return;
-        openDir(t.dir);
-        if (t.file) {
-          if (!IMAGE_EXT.test(t.file)) {
-            notify("这个文件不是支持的图片格式", true);
-            return;
-          }
-          const file = t.file;
-          setOpenFile((prev) => ({ path: file, key: (prev?.key ?? 0) + 1 }));
-        }
+        openTarget(await resolveTarget(path));
       } catch (e) {
         notify(`打不开这个路径：${String(e)}`, true);
       }
     },
-    [openDir, notify]
+    [openTarget, notify]
   );
+
+  /** 剪贴板粘贴（M9）：资源管理器/Finder 里复制图片后 Ctrl/Cmd+V 直接看。 */
+  const pasteFiles = useCallback(async () => {
+    try {
+      const files = await clipboardFiles();
+      if (files.length === 0) {
+        notify("剪贴板里没有文件", true);
+        return;
+      }
+      await openPath(files[0]);
+      if (files.length > 1) notify(`已打开第一项，剪贴板里共 ${files.length} 个文件`);
+    } catch (e) {
+      notify(String(e), true);
+    }
+  }, [openPath, notify]);
 
   useEffect(() => {
     let alive = true;
     void launchTarget().then(async (t) => {
       if (!alive) return;
-      if (t.dir) openDir(t.dir);
-      if (t.file) {
-        const file = t.file;
-        setOpenFile((prev) => ({ path: file, key: (prev?.key ?? 0) + 1 }));
-      }
+      openTarget(t);
+      // 单实例：第二实例在前端挂上监听之前发来的目标，从这里补打开。
+      const pending = await takePendingTarget();
+      if (alive) openTarget(pending);
       // 管理员进程收不到 Explorer 的 OLE 拖放（R13）：启动时明确告知，不静默失效。
       if (await isElevated()) {
         if (alive) notify("以管理员身份运行：资源管理器拖放不可用，请从侧栏进入图片所在目录", true);
@@ -153,7 +182,19 @@ export default function App() {
     return () => {
       alive = false;
     };
-  }, [openDir, notify]);
+  }, [openTarget, notify]);
+
+  // 单实例（M9）：再次双击关联文件/命令行打开时，把目标交给这个已运行的窗口。
+  useEffect(() => {
+    if (!isTauri()) return;
+    let unlisten: (() => void) | undefined;
+    void listen<string>("albumio://open-target", (ev) => {
+      void openPath(ev.payload);
+    }).then((fn) => {
+      unlisten = fn;
+    });
+    return () => unlisten?.();
+  }, [openPath]);
 
   // 拖放打开（M9）：整个窗口接收，取第一个路径；拖入目录进目录，拖入图片进父目录并看图。
   useEffect(() => {
@@ -235,11 +276,15 @@ export default function App() {
       } else if (k === "e" && !ev.shiftKey) {
         ev.preventDefault();
         setBatchRequest((n) => n + 1);
+      } else if (k === "v" && !ev.shiftKey) {
+        // 剪贴板粘贴文件（M9）：输入框内的粘贴已在上面按 isTextInput 放行。
+        ev.preventDefault();
+        void pasteFiles();
       }
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [back, forward, up, viewerOpen]);
+  }, [back, forward, up, viewerOpen, pasteFiles]);
 
   const crumbs = useMemo(() => crumbsOf(status.dir || dir), [status.dir, dir]);
   const currentExt = status.currentName?.split(".").pop()?.toUpperCase() ?? "";

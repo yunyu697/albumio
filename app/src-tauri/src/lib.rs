@@ -26,6 +26,10 @@ pub struct WatchState(pub Mutex<Option<DirWatcher>>);
 /// M9 的"默认打开方式"（双击关联文件）也走这条路。
 pub struct StartTarget(pub Option<String>);
 
+/// 单实例（M9）：第二个进程的启动参数要交给已运行的主窗口。
+/// 主窗口前端可能还没挂上事件监听，用这个槽兜住那段窗口期；前端启动后取一次（取走即清空）。
+pub struct PendingTarget(pub Mutex<Option<String>>);
+
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct ListResponse {
@@ -436,6 +440,191 @@ fn albumio_resolve_target(path: String) -> LaunchTarget {
     resolve_target(Path::new(&path))
 }
 
+/// 单实例：从第二进程的 argv 里挑出要打开的目标。argv[0] 是可执行文件，跳过；
+/// 选项参数（`-` 开头）不算目标；只认真实存在的路径。
+fn target_from_args(args: &[String]) -> Option<String> {
+    args.iter()
+        .skip(1)
+        .find(|a| !a.starts_with('-') && Path::new(a).exists())
+        .cloned()
+}
+
+/// 取走第二实例暂存的目标（前端启动时调一次）：双击第二个关联文件时复用主窗口。
+#[tauri::command]
+fn albumio_take_pending(state: tauri::State<PendingTarget>) -> LaunchTarget {
+    let path = state.0.lock().ok().and_then(|mut slot| slot.take());
+    match path {
+        Some(p) => resolve_target(Path::new(&p)),
+        None => LaunchTarget {
+            dir: None,
+            file: None,
+        },
+    }
+}
+
+/// 剪贴板里已复制的文件列表（M9）：资源管理器/Finder 里复制图片后 Ctrl/Cmd+V 打开。
+/// 剪贴板里不是文件时返回空数组；平台能力或工具缺失时返回可读的错误。
+#[tauri::command]
+fn albumio_clipboard_files() -> Result<Vec<String>, String> {
+    #[cfg(target_os = "windows")]
+    {
+        clipboard_files_windows()
+    }
+    #[cfg(target_os = "macos")]
+    {
+        clipboard_files_macos()
+    }
+    #[cfg(target_os = "linux")]
+    {
+        clipboard_files_linux()
+    }
+    #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
+    {
+        Err("当前平台不支持从剪贴板粘贴文件".to_string())
+    }
+}
+
+/// Windows：CF_HDROP 就是资源管理器复制文件时写的格式，拖放与它是同一套句柄。
+#[cfg(target_os = "windows")]
+fn clipboard_files_windows() -> Result<Vec<String>, String> {
+    use std::ffi::OsString;
+    use std::os::windows::ffi::OsStringExt;
+    use windows_sys::Win32::System::DataExchange::{
+        CloseClipboard, GetClipboardData, IsClipboardFormatAvailable, OpenClipboard,
+    };
+    use windows_sys::Win32::System::Memory::{GlobalLock, GlobalUnlock};
+    use windows_sys::Win32::System::Ole::CF_HDROP;
+    use windows_sys::Win32::UI::Shell::{DragQueryFileW, HDROP};
+
+    unsafe {
+        if IsClipboardFormatAvailable(CF_HDROP as u32) == 0 {
+            return Ok(Vec::new());
+        }
+        // 剪贴板同一时间只能被一个进程打开；被占用时短暂重试，仍失败就如实报错。
+        let mut opened = 0;
+        for _ in 0..5 {
+            opened = OpenClipboard(std::ptr::null_mut());
+            if opened != 0 {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+        if opened == 0 {
+            return Err("剪贴板被其他程序占用，请稍后再试".to_string());
+        }
+
+        let mut files = Vec::new();
+        let handle = GetClipboardData(CF_HDROP as u32);
+        if !handle.is_null() {
+            // CF_HDROP 的数据是 HGLOBAL，要 GlobalLock 才能当 HDROP 用；解引用的是剪贴板内存，
+            // 只能用 DragQueryFileW 取名字，不能 free。
+            let drop = GlobalLock(handle) as HDROP;
+            if !drop.is_null() {
+                // ifile = 0xFFFFFFFF 表示"返回文件个数"。
+                let count = DragQueryFileW(drop, u32::MAX, std::ptr::null_mut(), 0);
+                for i in 0..count {
+                    let len = DragQueryFileW(drop, i, std::ptr::null_mut(), 0) as usize;
+                    if len == 0 {
+                        continue;
+                    }
+                    let mut buf = vec![0u16; len + 1];
+                    let n = DragQueryFileW(drop, i, buf.as_mut_ptr(), buf.len() as u32) as usize;
+                    buf.truncate(n);
+                    files.push(OsString::from_wide(&buf).to_string_lossy().into_owned());
+                }
+                GlobalUnlock(handle);
+            }
+        }
+        CloseClipboard();
+        Ok(files)
+    }
+}
+
+/// macOS：Finder 复制文件时剪贴板里是 furl（file URL）列表，用 AppleScript 取，
+/// 免引第三方剪贴板依赖。剪贴板不是文件时脚本输出为空，按"没有文件"处理。
+#[cfg(target_os = "macos")]
+fn clipboard_files_macos() -> Result<Vec<String>, String> {
+    const SCRIPT: &str = r#"
+set out to ""
+try
+	set theFiles to the clipboard as {«class furl»}
+	repeat with f in theFiles
+		set out to out & (POSIX path of f) & linefeed
+	end repeat
+end try
+return out
+"#;
+    let out = std::process::Command::new("osascript")
+        .arg("-e")
+        .arg(SCRIPT)
+        .output()
+        .map_err(|e| format!("调用 osascript 失败：{e}"))?;
+    if !out.status.success() {
+        return Err("读剪贴板失败：剪贴板里的内容不是文件".to_string());
+    }
+    Ok(String::from_utf8_lossy(&out.stdout)
+        .lines()
+        .map(str::trim)
+        .filter(|l| !l.is_empty())
+        .map(str::to_string)
+        .collect())
+}
+
+/// Linux：文件管理器把复制项写成 `text/uri-list`，优先 wl-paste（Wayland），回退 xclip（X11）。
+#[cfg(target_os = "linux")]
+fn clipboard_files_linux() -> Result<Vec<String>, String> {
+    let attempts: [(&str, &[&str]); 2] = [
+        ("wl-paste", &["--no-newline", "--type", "text/uri-list"]),
+        (
+            "xclip",
+            &["-selection", "clipboard", "-t", "text/uri-list", "-o"],
+        ),
+    ];
+    for (cmd, args) in attempts {
+        if let Ok(out) = std::process::Command::new(cmd).args(args).output() {
+            if out.status.success() {
+                return Ok(parse_uri_list(&String::from_utf8_lossy(&out.stdout)));
+            }
+        }
+    }
+    Err("读剪贴板需要 wl-paste 或 xclip，当前都不可用".to_string())
+}
+
+/// 解析 `text/uri-list`：只取 `file://` 行，去掉 host 段并做百分号解码。
+#[cfg(target_os = "linux")]
+fn parse_uri_list(text: &str) -> Vec<String> {
+    text.lines()
+        .map(str::trim)
+        .filter_map(|line| line.strip_prefix("file://"))
+        .filter_map(|rest| {
+            // `file:///home/a b.jpg` 的 host 段为空；`file://host/path` 要去掉 host。
+            let path = match rest.strip_prefix('/') {
+                Some(_) => rest.to_string(),
+                None => rest[rest.find('/')?..].to_string(),
+            };
+            percent_decode(&path)
+        })
+        .collect()
+}
+
+#[cfg(target_os = "linux")]
+fn percent_decode(s: &str) -> Option<String> {
+    let bytes = s.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'%' && i + 2 < bytes.len() {
+            let hex = std::str::from_utf8(&bytes[i + 1..i + 3]).ok()?;
+            out.push(u8::from_str_radix(hex, 16).ok()?);
+            i += 3;
+        } else {
+            out.push(bytes[i]);
+            i += 1;
+        }
+    }
+    String::from_utf8(out).ok()
+}
+
 /// 是否以管理员身份运行。Windows 上管理员进程收不到 Explorer 的 OLE 拖放（R13），
 /// 前端据此提示改用「打开文件」；其他平台恒为 false。
 #[tauri::command]
@@ -544,6 +733,24 @@ fn theme_icon(theme: tauri::Theme) -> Option<tauri::image::Image<'static>> {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        // 单实例必须最先注册：第二进程在其余插件与 setup 之前就被拦下并退出（M9）。
+        .plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {
+            // 第二进程已由插件接管：这里只把目标交给主窗口，并把它叫到前台。
+            let target = target_from_args(&argv);
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.unminimize();
+                let _ = window.show();
+                let _ = window.set_focus();
+            }
+            if let Some(path) = target {
+                if let Some(slot) = app.try_state::<PendingTarget>() {
+                    if let Ok(mut pending) = slot.0.lock() {
+                        *pending = Some(path.clone());
+                    }
+                }
+                let _ = app.emit("albumio://open-target", path);
+            }
+        }))
         .setup(|app| {
             let dir = data_dir(app.handle())?;
             let pipeline = Pipeline::new(dir.join("thumbs"))
@@ -560,6 +767,7 @@ pub fn run() {
             };
             app.manage(DataDir(dir));
             app.manage(StartTarget(start));
+            app.manage(PendingTarget(Mutex::new(None)));
             app.manage(pipeline);
             app.manage(Listing::new());
             app.manage(IndexState(index));
@@ -598,6 +806,8 @@ pub fn run() {
             albumio_restore,
             albumio_launch_target,
             albumio_resolve_target,
+            albumio_take_pending,
+            albumio_clipboard_files,
             albumio_elevated,
             albumio_roots,
             albumio_dirs,
