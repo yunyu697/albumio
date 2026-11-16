@@ -75,7 +75,7 @@ jobs:
         working-directory: app
       - name: 注入版本（package.json → tauri.conf.json / Cargo.toml）
         run: node scripts/version-sync.mjs
-      - name: 检查 Apple 签名/公证凭据（缺失只警告，不冒充已签名）
+      - name: 注入 Apple 签名/公证凭据（缺失则完全不设变量，照样出包）
         if: matrix.platform == 'macos'
         shell: bash
         env:
@@ -86,9 +86,17 @@ jobs:
           APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
+          # 只在有值的键上导出：空字符串的 APPLE_* 会让 bundler 误以为要签名而失败。
           missing=""
           for k in APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD APPLE_SIGNING_IDENTITY APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID; do
-            [ -n "${!k}" ] || missing="$missing $k"
+            v="${!k}"
+            if [ -n "$v" ]; then
+              # 证书是 base64，可能带换行；用 heredoc 形态写入 GITHUB_ENV 才不会被截断。
+              delim="EOF_${k}"
+              { echo "$k<<$delim"; printf '%s\n' "$v"; echo "$delim"; } >> "$GITHUB_ENV"
+            else
+              missing="$missing $k"
+            fi
           done
           if [ -n "$missing" ]; then
             echo "::warning::缺少 Apple 凭据:$missing。按约定继续产出未签名/未公证包，Gatekeeper 会拦截；补齐 Secrets 后重跑即可。"
@@ -99,13 +107,8 @@ jobs:
         working-directory: app
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          # macOS 签名 + 公证（凭据由仓库 Secrets 提供，缺失时上面已给出警告）。
-          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
-          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          # macOS 签名/公证的 APPLE_* 由上一步按“有值才注入”写进 GITHUB_ENV：
+          # 没有任何凭据时不设这些变量，bundler 直接产出未签名/未公证包，不把它当阻塞。
         run: npm run tauri build -- --config src-tauri/tauri.release.conf.json ${{ matrix.build_args }} --bundles ${{ matrix.bundles }}
       - name: 列出产物（便于排查）
         shell: bash
