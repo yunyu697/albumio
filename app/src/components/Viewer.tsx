@@ -88,7 +88,6 @@ export default function Viewer({
   const [filmOpen, setFilmOpen] = useState(true);
   const [chrome, setChrome] = useState(true);
   const [dragging, setDragging] = useState(false);
-  const [interacting, setInteracting] = useState(false);
   // null = 适应窗口（跟随窗口尺寸重算）；数字 = 用户定的倍率（100% = L2 1:1）。
   const [zoom, setZoom] = useState<number | null>(null);
   const [pan, setPan] = useState({ x: 0, y: 0 });
@@ -103,7 +102,6 @@ export default function Viewer({
   const panRef = useRef(pan);
   const effZoomRef = useRef(1);
   const chromeTimer = useRef(0);
-  const interactTimer = useRef(0);
   const dragRef = useRef<{ x: number; y: number; px: number; py: number } | null>(null);
   const filmDragRef = useRef(false);
   const heldRef = useRef<Map<string, string>>(new Map());
@@ -312,12 +310,6 @@ export default function Viewer({
     return () => window.clearTimeout(chromeTimer.current);
   }, [showChrome]);
 
-  const touchInteraction = useCallback(() => {
-    setInteracting(true);
-    window.clearTimeout(interactTimer.current);
-    interactTimer.current = window.setTimeout(() => setInteracting(false), 120);
-  }, []);
-
   /* ---------------- 缩放与平移 ---------------- */
 
   const applyZoom = useCallback(
@@ -343,9 +335,8 @@ export default function Viewer({
         setPan((prev) => clampPan(prev, z1));
       }
       setZoom(next);
-      touchInteraction();
     },
-    [nat, clampPan, touchInteraction]
+    [nat, clampPan]
   );
 
   useEffect(() => {
@@ -559,7 +550,9 @@ export default function Viewer({
     width: nat ? `${nat.w}px` : "100%",
     height: nat ? `${nat.h}px` : "100%",
     transform: `translate(${pan.x}px, ${pan.y}px) scale(${effZoom})`,
-    transition: interacting || dragging ? "none" : undefined,
+    // drag 时关掉 transition（跟手平移必须即时）；wheel / 静止时给短过渡
+    // 让缩放从一个倍率平滑到下一个，而不是一顿一顿硬切。
+    transition: dragging ? "none" : "transform 120ms cubic-bezier(.22,.61,.36,1)",
   };
 
   const filmItems = items.slice(filmRange.lo, filmRange.hi);

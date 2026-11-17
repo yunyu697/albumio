@@ -25,6 +25,7 @@ import {
   takenTimes,
   thumbUrl,
   type Entry,
+  type SortMode,
   type StatRow,
 } from "../data/source";
 import { bucketize, type TakenInfo } from "../data/timeline";
@@ -71,6 +72,10 @@ interface BrowseProps {
   openFileKey: number;
   /** viewer / editor / 批量处理打开时 App 要放掉全局键（Alt 导航等）。 */
   onViewerOpen: (open: boolean) => void;
+  /** 排序模式：nameAsc / folderThenName 后端做；mtimeDesc / sizeDesc / nameDesc 前端 stat 回来后再排。 */
+  sort: SortMode;
+  /** 递归列举子目录（穿透）。 */
+  recursive: boolean;
 }
 
 interface Range {
@@ -101,6 +106,8 @@ export default function Browse({
   openFile,
   openFileKey,
   onViewerOpen,
+  sort,
+  recursive,
 }: BrowseProps) {
   const [entries, setEntries] = useState<Entry[]>([]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -203,7 +210,7 @@ export default function Browse({
   useEffect(() => {
     if (!dir) return;
     let alive = true;
-    void listDir(dir)
+    void listDir(dir, { sort, recursive })
       .then((r) => {
         if (!alive) return;
         generationRef.current = r.generation;
@@ -242,7 +249,7 @@ export default function Browse({
     return () => {
       alive = false;
     };
-  }, [dir, reload, reloadKey]);
+  }, [dir, reload, reloadKey, sort, recursive]);
 
   // 时间线：按批读拍摄时间（一批 250，串行——EXIF 读取是磁盘操作，并发只会让机械盘抖动）。
   // 只读「还没读到过的」路径：外部新增/改名时不能把 1 万项的 EXIF 全部重读一遍。
@@ -284,13 +291,37 @@ export default function Browse({
     };
   }, [view, entries, reload]);
 
+  /** 根据 sort 模式决定是否需要 stat 数据来排序。 */
+  const needsStatSort = (s: SortMode) => s === "mtimeDesc" || s === "sizeDesc" || s === "nameDesc";
+
   const applyStats = useCallback((rows: StatRow[]) => {
     if (rows.length === 0) return;
     const next = statsRef.current;
     for (const r of rows) next.set(r.path, r);
+    // stat 回来后，需要 stat 数据的排序模式在这里重排（后端 listDir 只做 readdir 级排序）。
+    if (needsStatSort(sort)) {
+      setEntries((prev) => {
+        const sorted = [...prev].sort((a, b) => {
+          const ra = statsRef.current.get(a.path);
+          const rb = statsRef.current.get(b.path);
+          const cmp = (av?: number, bv?: number) => {
+            if (av === undefined && bv === undefined) return 0;
+            if (av === undefined) return 1; // 无 stat 放后面
+            if (bv === undefined) return -1;
+            return bv - av; // desc
+          };
+          if (sort === "mtimeDesc") return cmp(ra?.mtimeNs, rb?.mtimeNs);
+          if (sort === "sizeDesc") return cmp(ra?.size, rb?.size);
+          if (sort === "nameDesc") return naturalCmp(b.name, a.name);
+          return 0;
+        });
+        // 保持当前项 / 选中项不变：重排只动 entries 数组，不触发 setCurrent / setSelected。
+        return sorted;
+      });
+    }
     // 复用同一个 tick 驱动重渲染（stat 与缩略图都只是"数据变了"）
     setThumbTick((t) => t + 1);
-  }, []);
+  }, [sort]);
 
   /* ---------------- 可见区：P0/P1 stat + 缩略图 ---------------- */
 

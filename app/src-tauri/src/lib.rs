@@ -84,11 +84,35 @@ fn albumio_thumb(
 
 /// 只做 readdir（不含 stat）：进目录后的第一件事，毫秒级返回文件名。
 /// 每次调用开启新 generation，旧目录的在途/排队 stat 全部作废（`docs/spike/S4.md`）。
+///
+/// `sort`：可选排序模式，默认 nameAsc（文件名自然序）。
+/// `recursive`：是否穿透子目录（默认 false）；开启后返回条目带 `relPath`。
+/// `max_depth`：递归深度上限（仅 recursive=true 时生效，默认 4）。
 #[tauri::command]
-fn albumio_list(listing: tauri::State<Listing>, dir: String) -> Result<ListResponse, String> {
+fn albumio_list(
+    listing: tauri::State<Listing>,
+    dir: String,
+    sort: Option<String>,
+    recursive: Option<bool>,
+    max_depth: Option<u32>,
+) -> Result<ListResponse, String> {
     let t0 = Instant::now();
     let generation = listing.begin_generation();
-    let entries = albumio_core::listing::read_images(Path::new(&dir)).map_err(|e| e.to_string())?;
+
+    let sort_mode = match sort.as_deref().unwrap_or("nameAsc") {
+        "folderThenName" => albumio_core::listing::SortMode::FolderThenName,
+        "nameAsc" | _ => albumio_core::listing::SortMode::NameAsc,
+    };
+
+    let entries = if recursive.unwrap_or(false) {
+        let depth = max_depth.unwrap_or(4);
+        albumio_core::listing::read_images_recursive(Path::new(&dir), depth, sort_mode)
+            .map_err(|e| e.to_string())?
+    } else {
+        albumio_core::listing::read_images_with_sort(Path::new(&dir), sort_mode)
+            .map_err(|e| e.to_string())?
+    };
+
     Ok(ListResponse {
         generation,
         dir,

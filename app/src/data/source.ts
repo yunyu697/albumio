@@ -16,7 +16,11 @@ export interface Entry {
   name: string;
   path: string;
   isDir: boolean;
+  /** 递归列举时：相对根目录的子路径；平面列举时不存在。 */
+  relPath?: string;
 }
+
+export type SortMode = "nameAsc" | "folderThenName" | "mtimeDesc" | "sizeDesc" | "nameDesc";
 
 export interface ListResult {
   generation: number;
@@ -82,12 +86,23 @@ export async function isElevated(): Promise<boolean> {
   }
 }
 
-export async function listDir(dir: string): Promise<ListResult> {
+export interface ListDirOptions {
+  sort?: SortMode;
+  recursive?: boolean;
+  maxDepth?: number;
+}
+
+export async function listDir(dir: string, options: ListDirOptions = {}): Promise<ListResult> {
   if (!isTauri()) {
     const entries = mockEntries();
     return { generation: 1, dir, entries, elapsedMs: 0 };
   }
-  return invoke<ListResult>("albumio_list", { dir });
+  return invoke<ListResult>("albumio_list", {
+    dir,
+    sort: options.sort ?? "nameAsc",
+    recursive: options.recursive ?? false,
+    maxDepth: options.maxDepth ?? 4,
+  });
 }
 
 export function createScheduler(): StatScheduler {

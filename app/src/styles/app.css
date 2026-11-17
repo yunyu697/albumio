@@ -197,6 +197,38 @@ input { font: inherit; color: inherit; }
   color: var(--ds-color-accent);
 }
 
+/* 排序菜单 Popover（绝对定位在 sort 按钮下方）。 */
+.sort-pop {
+  position: fixed;
+  top: var(--lv-titlebar-h);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 9000;
+  min-width: 220px;
+  padding: var(--ds-space-1);
+  background: var(--ds-color-surface);
+  border: var(--ds-border-hairline) solid var(--ds-color-line-strong);
+  border-radius: var(--ds-radius-md);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, .28);
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.sort-item {
+  display: flex;
+  align-items: center;
+  gap: var(--ds-space-2);
+  padding: 7px 10px;
+  font-size: 13px;
+  color: var(--ds-color-text);
+  border-radius: var(--ds-radius-sm);
+  transition: background var(--ds-dur-1) var(--ds-ease-standard);
+  text-align: left;
+}
+.sort-item:hover { background: var(--ds-color-hover); }
+.sort-item .i { width: 14px; height: 14px; color: transparent; }
+.sort-item.on .i { color: var(--ds-color-accent); }
+
 /* 工具条 */
 .toolbar {
   height: var(--lv-toolbar-h);

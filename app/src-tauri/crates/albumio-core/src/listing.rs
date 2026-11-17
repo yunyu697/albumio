@@ -30,6 +30,9 @@ pub struct ListEntry {
     pub name: String,
     pub path: String,
     pub is_dir: bool,
+    /// 相对列举根目录的路径；仅递归列举时填充，平面列举为 None。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rel_path: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -40,13 +43,23 @@ pub struct EntryStat {
     pub mtime_ns: i128,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum SortMode {
+    /// 按文件名自然序（默认，相机 DSC_2 在 DSC_10 前）。
+    #[default]
+    NameAsc,
+    /// 按路径分组：先按子目录 naturalCmp，组内按文件名 naturalCmp。
+    FolderThenName,
+}
+
 /// 只做 readdir：读名字 + 用 `DirEntry::file_type` 区分目录，不 stat 任何文件。
 pub fn read_entries(dir: &Path) -> Result<Vec<ListEntry>> {
     let mut out = Vec::new();
     for entry in std::fs::read_dir(dir)? {
         let entry = match entry {
             Ok(e) => e,
-            Err(_) => continue, // 列举期间被删掉的条目直接跳过，不让整次列举失败
+            Err(_) => continue,
         };
         let file_type = match entry.file_type() {
             Ok(t) => t,
@@ -57,6 +70,7 @@ pub fn read_entries(dir: &Path) -> Result<Vec<ListEntry>> {
             path: entry.path().display().to_string(),
             name,
             is_dir: file_type.is_dir(),
+            rel_path: None,
         });
     }
     out.sort_by(|a, b| natural_cmp(&a.name, &b.name));
@@ -64,10 +78,101 @@ pub fn read_entries(dir: &Path) -> Result<Vec<ListEntry>> {
 }
 
 /// 网格只显示图片文件；目录由 M3 的侧栏树承担。
+/// 默认按文件名自然序（相机导出名 DSC_2 在 DSC_10 前）。
 pub fn read_images(dir: &Path) -> Result<Vec<ListEntry>> {
+    read_images_with_sort(dir, SortMode::default())
+}
+
+/// 指定排序的版本；目录跳过（只读图片，不递归）。
+pub fn read_images_with_sort(dir: &Path, sort: SortMode) -> Result<Vec<ListEntry>> {
     let mut entries = read_entries(dir)?;
     entries.retain(|e| !e.is_dir && has_image_ext(&e.name));
+    match sort {
+        SortMode::NameAsc => { /* read_entries 已经按 name natural 排过了 */ }
+        SortMode::FolderThenName => {
+            entries.sort_by(|a, b| {
+                natural_cmp(&a.path, &b.path).then_with(|| natural_cmp(&a.name, &b.name))
+            });
+        }
+    }
     Ok(entries)
+}
+
+/// 递归列举图片；子目录深度上限 `max_depth`（根=0），硬防无限递归。
+/// 返回条目带 `rel_path`（相对 dir 的路径，空串表示根目录直接文件），
+/// 平铺成一个大列表，目录名在路径里。
+///
+/// 跳过：`.git`、`$RECYCLE.BIN`、`System Volume Information`、`.Trash*`、`Thumbs.db` 所在目录、
+/// 以及任何以 `.` 开头的目录（macOS/Linux 隐藏目录）。
+pub fn read_images_recursive(dir: &Path, max_depth: u32, sort: SortMode) -> Result<Vec<ListEntry>> {
+    let mut out = Vec::new();
+    let root_display = dir.display().to_string();
+    collect_recursive(dir, &root_display, max_depth, 0, &mut out)?;
+
+    match sort {
+        SortMode::NameAsc => {
+            out.sort_by(|a, b| natural_cmp(&a.name, &b.name));
+        }
+        SortMode::FolderThenName => {
+            // rel_path 为主（空子串在最前 = 根目录文件先出），name 为辅。
+            out.sort_by(|a, b| {
+                let ra = a.rel_path.as_deref().unwrap_or("");
+                let rb = b.rel_path.as_deref().unwrap_or("");
+                natural_cmp(ra, rb).then_with(|| natural_cmp(&a.name, &b.name))
+            });
+        }
+    }
+    Ok(out)
+}
+
+fn collect_recursive(
+    dir: &Path,
+    root_display: &str,
+    max_depth: u32,
+    depth: u32,
+    out: &mut Vec<ListEntry>,
+) -> Result<()> {
+    if depth > max_depth {
+        return Ok(());
+    }
+    for entry in std::fs::read_dir(dir)? {
+        let entry = match entry {
+            Ok(e) => e,
+            Err(_) => continue,
+        };
+        let file_type = match entry.file_type() {
+            Ok(t) => t,
+            Err(_) => continue,
+        };
+        let name = entry.file_name().to_string_lossy().to_string();
+
+        if file_type.is_dir() {
+            // 跳过系统/隐藏目录
+            let skip = name.starts_with('.')
+                || name == "$RECYCLE.BIN"
+                || name == "System Volume Information"
+                || name == "$Recycle.Bin";
+            if skip {
+                continue;
+            }
+            collect_recursive(&entry.path(), root_display, max_depth, depth + 1, out)?;
+        } else if has_image_ext(&name) {
+            let full = entry.path().display().to_string();
+            // rel_path = 从 root_display 之后截取的子路径；根目录文件为 ""
+            let rel = full
+                .strip_prefix(root_display)
+                .and_then(|s| s.strip_prefix(['/', '\\']))
+                .unwrap_or("")
+                .to_string();
+            out.push(ListEntry {
+                name,
+                path: full,
+                is_dir: false,
+                rel_path: Some(rel),
+            });
+        }
+    }
+    Ok(())
 }
 
 pub fn has_image_ext(name: &str) -> bool {

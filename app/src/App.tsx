@@ -19,6 +19,7 @@ import {
 } from "./data/source";
 import { formatBytes } from "./format";
 import Browse, { type BrowseView, type GridStatus } from "./screens/Browse";
+import type { SortMode } from "./data/source";
 import { isComposing, isTextInput } from "./keys";
 import { useTheme } from "./theme";
 import { loadPrefs, savePrefs } from "./prefs";
@@ -39,6 +40,20 @@ const EMPTY_STATUS: GridStatus = {
   currentSize: null,
   currentRating: null,
 };
+
+const SORT_OPTIONS: { value: SortMode; label: string; hint: string }[] = [
+  { value: "nameAsc", label: "名称 · 升序", hint: "文件名字母序，数字段按数值" },
+  { value: "folderThenName", label: "路径分组 · 名称", hint: "先按子目录分组，组内按文件名" },
+  { value: "nameDesc", label: "名称 · 降序", hint: "倒序字母" },
+  { value: "mtimeDesc", label: "修改时间 · 新→旧", hint: "需要 stat 完成" },
+  { value: "sizeDesc", label: "文件大小 · 大→小", hint: "需要 stat 完成" },
+];
+
+function sortLabel(s: SortMode, view: BrowseView): string {
+  if (view === "timeline") return "拍摄时间 · 新→旧";
+  const o = SORT_OPTIONS.find((x) => x.value === s);
+  return o ? o.label : "名称 · 升序";
+}
 
 /** M9：拖放/关联进来的是不是本项目支持的图片（与 Rust 侧 read_images 的扩展名表一致）。 */
 const IMAGE_EXT =
@@ -89,6 +104,9 @@ export default function App() {
   const [sidebarOpen, setSidebarOpen] = useState(prefsRef.current.sidebarOpen);
   const [dir, setDir] = useState("");
   const [view, setView] = useState<BrowseView>(prefsRef.current.view);
+  const [sort, setSort] = useState<SortMode>("nameAsc");
+  const [sortMenu, setSortMenu] = useState(false);
+  const [recursive, setRecursive] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
   const [hist, setHist] = useState<{ list: string[]; i: number }>({ list: [], i: -1 });
   // 屏 2（M5）：viewer 挂在 Browse 里（它持有 entries/评分/收藏），App 只留
@@ -106,6 +124,27 @@ export default function App() {
   const toastIdRef = useRef(0);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const gearRef = useRef<HTMLButtonElement>(null);
+
+  // sortMenu 的 click outside / Esc 关闭。
+  useEffect(() => {
+    if (!sortMenu) return;
+    const onClick = (ev: MouseEvent) => {
+      const t = ev.target as HTMLElement;
+      if (!t.closest(".sort-pop") && !t.closest(".tbtn.tbtn:last-of-type, .tgroup > .tbtn:first-child")) {
+        // 排序按钮本身也可能在 group 里；简单策略：只要不在 sort-pop 里就关。
+        setSortMenu(false);
+      }
+    };
+    const onKey = (ev: KeyboardEvent) => {
+      if (ev.key === "Escape") setSortMenu(false);
+    };
+    window.addEventListener("mousedown", onClick);
+    window.addEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("mousedown", onClick);
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [sortMenu]);
 
   const notify = useCallback((text: string, error = false) => {
     setToast({ id: ++toastIdRef.current, text, error });
@@ -459,6 +498,25 @@ export default function App() {
         anchorRef={gearRef}
       />
 
+      {sortMenu && (
+        <div className="sort-pop" role="menu" aria-label="排序">
+          {SORT_OPTIONS.map((o) => (
+            <button
+              key={o.value}
+              className={`sort-item${sort === o.value ? " on" : ""}`}
+              onClick={() => {
+                setSort(o.value);
+                setSortMenu(false);
+              }}
+              title={o.hint}
+            >
+              <Icon id="i-check" size="xs" />
+              <span>{o.label}</span>
+            </button>
+          ))}
+        </div>
+      )}
+
       {/* 工具条 */}
       <div className="toolbar">
         <div className="tgroup">
@@ -531,9 +589,21 @@ export default function App() {
         </div>
         <div className="tsep" />
         <div className="tgroup">
-          <button className="tbtn" title="排序">
+          <button
+            className={`tbtn${sortMenu ? " on" : ""}`}
+            title="排序"
+            onClick={() => setSortMenu((v) => !v)}
+          >
             <Icon id="i-sort" size="sm" />
-            {view === "timeline" ? "拍摄时间 · 新→旧" : "名称 · 升序"}
+            {sortLabel(sort, view)}
+          </button>
+          <button
+            className={`tbtn${recursive ? " on" : ""}`}
+            title="穿透子目录（所有层级）"
+            onClick={() => setRecursive((v) => !v)}
+          >
+            <Icon id="i-folder-tree" size="sm" />
+            {recursive ? "穿透" : "穿透"}
           </button>
         </div>
         <div className="tgroup" style={{ flex: 1, minWidth: 0 }}>
@@ -606,6 +676,8 @@ export default function App() {
           openFile={openFile?.path ?? null}
           openFileKey={openFile?.key ?? 0}
           onViewerOpen={setViewerOpen}
+          sort={sort}
+          recursive={recursive}
         />
         <aside className="inspector" hidden={!inspectorOpen}>
           <div className="rail insp-rail">
