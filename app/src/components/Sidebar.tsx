@@ -17,6 +17,8 @@ interface Props {
   /** 当前目录的元数据进度，用于底部进度条。 */
   statsKnown: number;
   statsTotal: number;
+  /** 允许外部（divider 拖拽）覆盖宽度。 */
+  style?: React.CSSProperties;
 }
 
 const norm = (p: string) => p.toLowerCase().replace(/[\\/]+$/, "");
@@ -33,7 +35,7 @@ function isUnder(path: string, root: string): boolean {
 }
 
 /** 侧栏：快速访问 + 目录树（懒加载，一次只读一层）+ 底部磁盘/进度。 */
-export function Sidebar({ dir, onOpenDir, statsKnown, statsTotal }: Props) {
+export function Sidebar({ dir, onOpenDir, statsKnown, statsTotal, style }: Props) {
   const [places, setPlaces] = useState<NavRoot[]>([]);
   const [roots, setRoots] = useState<NavRoot[]>([]);
   const [children, setChildren] = useState<Map<string, SubDir[]>>(new Map());
@@ -170,7 +172,7 @@ export function Sidebar({ dir, onOpenDir, statsKnown, statsTotal }: Props) {
   const complete = statsTotal > 0 && statsKnown >= statsTotal;
 
   return (
-    <aside className="sidebar">
+    <aside className="sidebar" style={style}>
       <div className="side-scroll">
         <div className="side-section">
           <div className="side-title">

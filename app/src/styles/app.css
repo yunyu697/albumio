@@ -455,6 +455,57 @@ input[type=range].lr::-moz-range-thumb {
 /* ================= 工作区 ================= */
 .workspace { flex: 1; display: flex; min-height: 0; position: relative; }
 
+/* Panel divider：侧栏/检查器可拖拽改变宽度。 */
+.divider {
+  width: 4px;
+  flex: none;
+  background: var(--ds-color-line);
+  cursor: col-resize;
+  transition: width var(--ds-dur-1) var(--ds-ease-standard), background var(--ds-dur-1) var(--ds-ease-standard);
+  position: relative;
+  z-index: 10;
+}
+.divider:hover,
+.divider:active {
+  width: 6px;
+  background: var(--ds-color-accent);
+}
+
+/* Panel toggle 按钮：折叠后的展开入口。 */
+.pane-toggle {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 18px;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--ds-color-surface);
+  border: var(--ds-border-hairline) solid var(--ds-color-line-strong);
+  border-radius: var(--ds-radius-sm);
+  color: var(--ds-color-text-muted);
+  cursor: pointer;
+  z-index: 20;
+  transition: background var(--ds-dur-1) var(--ds-ease-standard), color var(--ds-dur-1) var(--ds-ease-standard);
+}
+.pane-toggle:hover {
+  background: var(--ds-color-hover);
+  color: var(--ds-color-accent);
+}
+.pane-toggle.left {
+  left: -1px;
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+  border-left: none;
+}
+.pane-toggle.right {
+  right: -1px;
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+  border-right: none;
+}
+
 /* 侧栏 */
 .sidebar {
   width: var(--lv-sidebar-w);

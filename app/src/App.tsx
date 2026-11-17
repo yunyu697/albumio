@@ -102,7 +102,9 @@ export default function App() {
   const [status, setStatus] = useState<GridStatus>(EMPTY_STATUS);
   const [meta, setMeta] = useState<PhotoMeta | null>(null);
   const [inspectorOpen, setInspectorOpen] = useState(prefsRef.current.inspectorOpen);
+  const [inspectorWidth, setInspectorWidth] = useState(prefsRef.current.inspectorWidth);
   const [sidebarOpen, setSidebarOpen] = useState(prefsRef.current.sidebarOpen);
+  const [sidebarWidth, setSidebarWidth] = useState(prefsRef.current.sidebarWidth);
   const [dir, setDir] = useState("");
   const [view, setView] = useState<BrowseView>(prefsRef.current.view);
   const [sort, setSort] = useState<SortMode>(prefsRef.current.sort);
@@ -206,6 +208,45 @@ export default function App() {
     [openDir, notify]
   );
 
+  /* ---------------- 面板 divider 拖拽 ---------------- */
+  const dragStateRef = useRef<null | {
+    side: "sidebar" | "inspector";
+    startX: number;
+    startWidth: number;
+  }>(null);
+
+  const onDividerPointerDown = useCallback(
+    (side: "sidebar" | "inspector") => (ev: React.PointerEvent) => {
+      ev.preventDefault();
+      const startWidth = side === "sidebar" ? sidebarWidth : inspectorWidth;
+      dragStateRef.current = { side, startX: ev.clientX, startWidth };
+      (ev.target as Element).setPointerCapture(ev.pointerId);
+      document.body.style.cursor = side === "sidebar" ? "col-resize" : "col-resize";
+      document.body.style.userSelect = "none";
+    },
+    [sidebarWidth, inspectorWidth]
+  );
+
+  const onDividerPointerMove = useCallback((ev: React.PointerEvent) => {
+    const s = dragStateRef.current;
+    if (!s) return;
+    const delta = ev.clientX - s.startX;
+    if (s.side === "sidebar") {
+      const w = Math.max(140, Math.min(400, s.startWidth + delta));
+      setSidebarWidth(w);
+    } else {
+      const w = Math.max(200, Math.min(500, s.startWidth - delta));
+      setInspectorWidth(w);
+    }
+  }, []);
+
+  const onDividerPointerUp = useCallback(() => {
+    if (!dragStateRef.current) return;
+    dragStateRef.current = null;
+    document.body.style.cursor = "";
+    document.body.style.userSelect = "";
+  }, []);
+
   /** 打开一个外部路径（拖放/关联/剪贴板）：目录进目录，文件进父目录并在看图里定位。 */
   const openPath = useCallback(
     async (path: string) => {
@@ -283,7 +324,9 @@ export default function App() {
   useEffect(() => {
     savePrefs({
       sidebarOpen,
+      sidebarWidth,
       inspectorOpen,
+      inspectorWidth,
       cellIdx,
       view,
       sort,
@@ -291,7 +334,7 @@ export default function App() {
       reopenLastDir,
       lastDir: dir || prefsRef.current.lastDir,
     });
-  }, [sidebarOpen, inspectorOpen, cellIdx, view, sort, recursiveDepth, reopenLastDir, dir]);
+  }, [sidebarOpen, sidebarWidth, inspectorOpen, inspectorWidth, cellIdx, view, sort, recursiveDepth, reopenLastDir, dir]);
 
   // 启动时：如果 reopenLastDir 且有 lastDir，自动打开。
   useEffect(() => {
@@ -703,13 +746,35 @@ export default function App() {
       </div>
 
       {/* 工作区 */}
-      <div className="workspace">
+      <div
+        className="workspace"
+        onPointerMove={onDividerPointerMove}
+        onPointerUp={onDividerPointerUp}
+        onPointerCancel={onDividerPointerUp}
+      >
+        {/* 侧栏展开按钮（折叠时显示） */}
+        {!sidebarOpen && (
+          <button
+            className="pane-toggle left"
+            title="展开侧栏 (Ctrl B)"
+            onClick={() => setSidebarOpen(true)}
+          >
+            <Icon id="i-chev-right" size="xs" />
+          </button>
+        )}
         {sidebarOpen && (
           <Sidebar
             dir={status.dir || dir}
             onOpenDir={openDir}
             statsKnown={status.statsKnown}
             statsTotal={status.total}
+            style={{ width: sidebarWidth }}
+          />
+        )}
+        {sidebarOpen && (
+          <div
+            className="divider left"
+            onPointerDown={onDividerPointerDown("sidebar")}
           />
         )}
         <ErrorBoundary label="主视图" onReset={() => setDir("")}>
@@ -731,13 +796,20 @@ export default function App() {
             maxDepth={recursive ? recursiveDepth : 4}
           />
         </ErrorBoundary>
-        <aside className="inspector" hidden={!inspectorOpen}>
+        {inspectorOpen && (
+          <div
+            className="divider right"
+            onPointerDown={onDividerPointerDown("inspector")}
+          />
+        )}
+        <aside
+          className="inspector"
+          hidden={!inspectorOpen}
+          style={{ width: inspectorWidth }}
+        >
           <div className="rail insp-rail">
-            <button className="ibtn" title="展开检查器" data-tip="">
+            <button className="ibtn" title="折叠检查器" onClick={() => setInspectorOpen(false)}>
               <Icon id="i-panel-right" />
-              <span className="tip tip-side">
-                展开检查器 <kbd>Ctrl I</kbd>
-              </span>
             </button>
           </div>
           <Inspector
@@ -746,6 +818,16 @@ export default function App() {
             onMeta={setMeta}
           />
         </aside>
+        {/* 检查器展开按钮（折叠时显示） */}
+        {!inspectorOpen && (
+          <button
+            className="pane-toggle right"
+            title="展开检查器 (Ctrl I)"
+            onClick={() => setInspectorOpen(true)}
+          >
+            <Icon id="i-chev-left" size="xs" />
+          </button>
+        )}
       </div>
 
       {/* 状态栏 */}

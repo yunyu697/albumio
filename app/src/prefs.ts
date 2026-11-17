@@ -7,7 +7,9 @@ const PREFIX = "albumio.";
 
 export interface Prefs {
   sidebarOpen: boolean;
+  sidebarWidth: number; // px，默认 220
   inspectorOpen: boolean;
+  inspectorWidth: number; // px，默认 320
   cellIdx: number; // 0–4
   view: "folder" | "timeline";
   sort: SortMode;
@@ -19,7 +21,9 @@ export interface Prefs {
 
 const DEFAULTS: Prefs = {
   sidebarOpen: true,
+  sidebarWidth: 220,
   inspectorOpen: true,
+  inspectorWidth: 320,
   cellIdx: 2,
   view: "folder",
   sort: "nameAsc",
@@ -28,6 +32,11 @@ const DEFAULTS: Prefs = {
   lastDir: null,
   window: null,
 };
+
+const MIN_SIDEBAR = 140;
+const MAX_SIDEBAR = 400;
+const MIN_INSPECTOR = 200;
+const MAX_INSPECTOR = 500;
 
 function key(k: keyof Prefs): string {
   return PREFIX + k;
@@ -41,8 +50,18 @@ export function loadPrefs(): Prefs {
   try {
     const s = localStorage.getItem(key("sidebarOpen"));
     if (s) out.sidebarOpen = s === "1";
+    const sw = localStorage.getItem(key("sidebarWidth"));
+    if (sw) {
+      const n = parseInt(sw, 10);
+      if (!Number.isNaN(n)) out.sidebarWidth = Math.max(MIN_SIDEBAR, Math.min(MAX_SIDEBAR, n));
+    }
     const i = localStorage.getItem(key("inspectorOpen"));
     if (i) out.inspectorOpen = i === "1";
+    const iw = localStorage.getItem(key("inspectorWidth"));
+    if (iw) {
+      const n = parseInt(iw, 10);
+      if (!Number.isNaN(n)) out.inspectorWidth = Math.max(MIN_INSPECTOR, Math.min(MAX_INSPECTOR, n));
+    }
     const c = localStorage.getItem(key("cellIdx"));
     if (c) {
       const n = parseInt(c, 10);
@@ -81,7 +100,13 @@ export function loadPrefs(): Prefs {
 export function savePrefs(p: Partial<Prefs>): void {
   try {
     if (typeof p.sidebarOpen === "boolean") localStorage.setItem(key("sidebarOpen"), p.sidebarOpen ? "1" : "0");
+    if (typeof p.sidebarWidth === "number") {
+      localStorage.setItem(key("sidebarWidth"), String(Math.max(MIN_SIDEBAR, Math.min(MAX_SIDEBAR, p.sidebarWidth))));
+    }
     if (typeof p.inspectorOpen === "boolean") localStorage.setItem(key("inspectorOpen"), p.inspectorOpen ? "1" : "0");
+    if (typeof p.inspectorWidth === "number") {
+      localStorage.setItem(key("inspectorWidth"), String(Math.max(MIN_INSPECTOR, Math.min(MAX_INSPECTOR, p.inspectorWidth))));
+    }
     if (typeof p.cellIdx === "number") localStorage.setItem(key("cellIdx"), String(p.cellIdx));
     if (p.view === "folder" || p.view === "timeline") localStorage.setItem(key("view"), p.view);
     if (p.sort && SORT_MODES.includes(p.sort)) localStorage.setItem(key("sort"), p.sort);
