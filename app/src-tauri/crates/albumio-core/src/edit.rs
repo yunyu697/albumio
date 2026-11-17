@@ -333,7 +333,11 @@ pub struct SidecarRecord {
 pub fn sidecar_path(image: &Path) -> Option<PathBuf> {
     let parent = image.parent()?;
     let name = image.file_name()?;
-    Some(parent.join(SIDECAR_DIR).join(format!("{}.xmp", name.to_string_lossy())))
+    Some(
+        parent
+            .join(SIDECAR_DIR)
+            .join(format!("{}.xmp", name.to_string_lossy())),
+    )
 }
 
 pub fn read_sidecar(image: &Path) -> Result<Option<SidecarRecord>> {
@@ -516,7 +520,11 @@ mod tests {
         let stack = EditStack::parse(json).unwrap();
         let keys: Vec<_> = stack.ops.iter().map(|o| o.key()).collect();
         assert_eq!(keys, vec!["orient", "crop", "exposure", "sharpen"]);
-        assert_eq!(stack.ops[2], Op::Exposure { ev: 0.5 }, "重复的曝光取最后一次");
+        assert_eq!(
+            stack.ops[2],
+            Op::Exposure { ev: 0.5 },
+            "重复的曝光取最后一次"
+        );
         assert_eq!(stack.ops[3], Op::Sharpen { amount: 0.4 });
         let again = EditStack::parse(&stack.to_json().unwrap()).unwrap();
         assert_eq!(stack, again, "序列化后再解析必须等价");
@@ -549,8 +557,8 @@ mod tests {
                 src[i + 2] = 255;
             }
         }
-        let stack = EditStack::parse(r#"{"v":1,"ops":[{"op":"orient","deg":90,"flip":true}]}"#)
-            .unwrap();
+        let stack =
+            EditStack::parse(r#"{"v":1,"ops":[{"op":"orient","deg":90,"flip":true}]}"#).unwrap();
         let out = apply_ops(src, w, h, &stack).unwrap();
         assert_eq!((out.width, out.height), (2, 4));
         let px = |x: usize, y: usize| {

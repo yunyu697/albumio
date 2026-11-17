@@ -172,18 +172,16 @@ pub fn disk(dir: &Path) -> Option<DiskInfo> {
         .collect();
     let mut free = 0u64;
     let mut total = 0u64;
-    let ok = unsafe {
-        GetDiskFreeSpaceExW(
-            wide.as_ptr(),
-            &mut free,
-            &mut total,
-            std::ptr::null_mut(),
-        )
-    };
+    let ok =
+        unsafe { GetDiskFreeSpaceExW(wide.as_ptr(), &mut free, &mut total, std::ptr::null_mut()) };
     if ok == 0 || total == 0 {
         return None;
     }
-    let label = root.display().to_string().trim_end_matches('\\').to_string();
+    let label = root
+        .display()
+        .to_string()
+        .trim_end_matches('\\')
+        .to_string();
     Some(DiskInfo {
         label,
         free_bytes: free,

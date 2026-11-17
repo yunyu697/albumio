@@ -62,7 +62,9 @@ fn long_form(path: &Path) -> Option<std::path::PathBuf> {
 #[cfg(any(target_os = "windows", target_os = "linux"))]
 fn same_path(a: &Path, b: &Path) -> bool {
     a == b
-        || (cfg!(windows) && a.to_string_lossy().eq_ignore_ascii_case(&b.to_string_lossy()))
+        || (cfg!(windows)
+            && a.to_string_lossy()
+                .eq_ignore_ascii_case(&b.to_string_lossy()))
 }
 
 /// 移到系统回收站：单文件 `Delete` 也走这里（不弹框，§11.6.1）。

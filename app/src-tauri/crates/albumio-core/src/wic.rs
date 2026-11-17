@@ -15,9 +15,9 @@ use std::path::Path;
 use windows::core::{Interface, HSTRING};
 use windows::Win32::Foundation::GENERIC_READ;
 use windows::Win32::Graphics::Imaging::{
-    CLSID_WICImagingFactory, GUID_WICPixelFormat32bppRGBA, IWICBitmapFrameDecode,
-    IWICBitmapSource, IWICImagingFactory, IWICPalette, WICBitmapDitherTypeNone,
-    WICBitmapPaletteTypeCustom, WICDecodeMetadataCacheOnDemand,
+    CLSID_WICImagingFactory, GUID_WICPixelFormat32bppRGBA, IWICBitmapFrameDecode, IWICBitmapSource,
+    IWICImagingFactory, IWICPalette, WICBitmapDitherTypeNone, WICBitmapPaletteTypeCustom,
+    WICDecodeMetadataCacheOnDemand,
 };
 use windows::Win32::System::Com::{
     CoCreateInstance, CoInitializeEx, CLSCTX_INPROC_SERVER, COINIT_MULTITHREADED,
@@ -47,12 +47,7 @@ fn open_frame(path: &Path) -> Result<IWICBitmapFrameDecode> {
                 .map_err(|e| map_err(fmt, e))?;
         let name = HSTRING::from(path.as_os_str().to_string_lossy().as_ref());
         let decoder = factory
-            .CreateDecoderFromFilename(
-                &name,
-                None,
-                GENERIC_READ,
-                WICDecodeMetadataCacheOnDemand,
-            )
+            .CreateDecoderFromFilename(&name, None, GENERIC_READ, WICDecodeMetadataCacheOnDemand)
             .map_err(|e| map_err(fmt, e))?;
         decoder.GetFrame(0).map_err(|e| map_err(fmt, e))
     }

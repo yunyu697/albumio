@@ -58,9 +58,13 @@ fn start(
             if verbose {
                 match &res {
                     Ok(ev) => {
-                        let paths: Vec<String> =
-                            ev.paths.iter().map(|p| short(&root, p)).collect();
-                        println!("  +{:>9}ms  {:?}  [{}]", ms(at), ev.kind, paths.join(" -> "));
+                        let paths: Vec<String> = ev.paths.iter().map(|p| short(&root, p)).collect();
+                        println!(
+                            "  +{:>9}ms  {:?}  [{}]",
+                            ms(at),
+                            ev.kind,
+                            paths.join(" -> ")
+                        );
                     }
                     Err(e) => println!("  +{:>9}ms  ERROR {:?}  {}", ms(at), e.kind, e),
                 }
@@ -107,7 +111,10 @@ fn summarize(label: &str, recs: &[Rec]) {
                     "create" => create += 1,
                     "rename" => {
                         rename += 1;
-                        if matches!(ev.kind, EventKind::Modify(ModifyKind::Name(notify::event::RenameMode::Both))) {
+                        if matches!(
+                            ev.kind,
+                            EventKind::Modify(ModifyKind::Name(notify::event::RenameMode::Both))
+                        ) {
                             both += 1;
                         }
                     }
@@ -134,7 +141,11 @@ fn summarize(label: &str, recs: &[Rec]) {
         }
         println!(
             "[{}] 首事件 +{}ms，末事件 +{}ms，跨度 {}ms，最大事件间隔 {}ms",
-            label, ms(first.at), ms(last.at), ms(last.at.saturating_sub(first.at)), ms(max_gap)
+            label,
+            ms(first.at),
+            ms(last.at),
+            ms(last.at.saturating_sub(first.at)),
+            ms(max_gap)
         );
     }
 }
@@ -158,7 +169,10 @@ fn scenario_events(root: &Path) {
 
     step("向 a.jpg 追加 4×4 KB");
     {
-        let mut f = OpenOptions::new().append(true).open(dir.join("a.jpg")).unwrap();
+        let mut f = OpenOptions::new()
+            .append(true)
+            .open(dir.join("a.jpg"))
+            .unwrap();
         for _ in 0..4 {
             f.write_all(&[7u8; 4096]).unwrap();
             f.flush().unwrap();
@@ -207,7 +221,11 @@ fn scenario_events(root: &Path) {
         fs::write(dir.join(n), b"r").unwrap();
     }
     thread::sleep(Duration::from_millis(250));
-    for (a, b) in [("r1.jpg", "s1.jpg"), ("r2.jpg", "s2.jpg"), ("r3.jpg", "s3.jpg")] {
+    for (a, b) in [
+        ("r1.jpg", "s1.jpg"),
+        ("r2.jpg", "s2.jpg"),
+        ("r3.jpg", "s3.jpg"),
+    ] {
         fs::rename(dir.join(a), dir.join(b)).unwrap();
     }
     thread::sleep(Duration::from_millis(400));
@@ -294,7 +312,10 @@ fn scenario_overflow(root: &Path, n: usize, block_ms: u64) {
     let (w, h) = start(root, &dst, t0, Duration::from_millis(block_ms), false);
     thread::sleep(Duration::from_millis(300));
 
-    println!("\n=== 消费者阻塞 {}ms，同时 16 线程复制 {} 个文件 ===", block_ms, n);
+    println!(
+        "\n=== 消费者阻塞 {}ms，同时 16 线程复制 {} 个文件 ===",
+        block_ms, n
+    );
     let t_copy = Instant::now();
     let mut handles = Vec::new();
     for t in 0..16 {

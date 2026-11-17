@@ -221,10 +221,7 @@ struct EditSave {
 
 /// 读编辑栈：sidecar 与 SQLite 各存一份，取较新的；索引被删也不丢编辑（folder-first）。
 #[tauri::command]
-fn albumio_edits_load(
-    index: tauri::State<IndexState>,
-    path: String,
-) -> Result<EditLoad, String> {
+fn albumio_edits_load(index: tauri::State<IndexState>, path: String) -> Result<EditLoad, String> {
     let p = Path::new(&path);
     let meta = std::fs::metadata(p).map_err(|e| e.to_string())?;
     let size = meta.len();
@@ -319,10 +316,12 @@ fn albumio_edits_save(
     }
     let mut index_ok = false;
     match &index.0 {
-        Some(idx) => match idx.edits_set(&path, &record.stack.to_json().map_err(|e| e.to_string())?) {
-            Ok(_) => index_ok = true,
-            Err(e) => warnings.push(format!("索引写入失败：{e}")),
-        },
+        Some(idx) => {
+            match idx.edits_set(&path, &record.stack.to_json().map_err(|e| e.to_string())?) {
+                Ok(_) => index_ok = true,
+                Err(e) => warnings.push(format!("索引写入失败：{e}")),
+            }
+        }
         None => warnings.push("索引不可用，编辑只存于目录副本".into()),
     }
     if !sidecar_ok && !index_ok {
@@ -698,22 +697,24 @@ struct TakenRow {
 fn albumio_taken(paths: Vec<String>) -> Vec<TakenRow> {
     paths
         .into_iter()
-        .map(|path| match albumio_core::meta::taken_of(Path::new(&path)) {
-            Ok(t) => TakenRow {
-                path,
-                taken_at: t.taken_at,
-                taken_at_text: t.taken_at_text,
-                source: format!("{:?}", t.source).to_lowercase(),
-                failed: false,
+        .map(
+            |path| match albumio_core::meta::taken_of(Path::new(&path)) {
+                Ok(t) => TakenRow {
+                    path,
+                    taken_at: t.taken_at,
+                    taken_at_text: t.taken_at_text,
+                    source: format!("{:?}", t.source).to_lowercase(),
+                    failed: false,
+                },
+                Err(_) => TakenRow {
+                    path,
+                    taken_at: 0,
+                    taken_at_text: None,
+                    source: "inferred".into(),
+                    failed: true,
+                },
             },
-            Err(_) => TakenRow {
-                path,
-                taken_at: 0,
-                taken_at_text: None,
-                source: "inferred".into(),
-                failed: true,
-            },
-        })
+        )
         .collect()
 }
 

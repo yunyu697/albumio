@@ -178,13 +178,7 @@ impl Index {
         conn.execute("DELETE FROM fts_files WHERE path = ?1", params![meta.path])?;
         conn.execute(
             "INSERT INTO fts_files (path, name, title, keywords, camera) VALUES (?1,?2,?3,?4,?5)",
-            params![
-                meta.path,
-                meta.name,
-                meta.title,
-                keywords,
-                meta.camera,
-            ],
+            params![meta.path, meta.name, meta.title, keywords, meta.camera,],
         )?;
         Ok(())
     }
@@ -207,10 +201,14 @@ impl Index {
         }
         {
             let conn = self.conn.lock().unwrap();
-            conn.execute("INSERT OR IGNORE INTO tags (name) VALUES (?1)", params![tag])?;
-            let id: i64 = conn.query_row("SELECT id FROM tags WHERE name = ?1", params![tag], |r| {
-                r.get(0)
-            })?;
+            conn.execute(
+                "INSERT OR IGNORE INTO tags (name) VALUES (?1)",
+                params![tag],
+            )?;
+            let id: i64 =
+                conn.query_row("SELECT id FROM tags WHERE name = ?1", params![tag], |r| {
+                    r.get(0)
+                })?;
             conn.execute(
                 "INSERT OR IGNORE INTO file_tags (path, tag_id) VALUES (?1, ?2)",
                 params![path, id],
@@ -240,9 +238,10 @@ impl Index {
         let mut stmt = conn.prepare(
             "SELECT path FROM fts_files WHERE fts_files MATCH ?1 ORDER BY rank LIMIT ?2",
         )?;
-        let rows = stmt.query_map(params![format!("\"{}\"", q.replace('"', "\"\"")), limit as i64], |r| {
-            r.get::<_, String>(0)
-        })?;
+        let rows = stmt.query_map(
+            params![format!("\"{}\"", q.replace('"', "\"\"")), limit as i64],
+            |r| r.get::<_, String>(0),
+        )?;
         Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
     }
 

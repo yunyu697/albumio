@@ -8,7 +8,11 @@ use std::path::Path;
 
 /// Windows 上这三类格式交给 WIC；macOS/Linux 只有 HEIC 走内置 libheif。
 pub fn uses_platform_codec(format: ImageFormat) -> bool {
-    cfg!(windows) && matches!(format, ImageFormat::Heic | ImageFormat::Avif | ImageFormat::Raw)
+    cfg!(windows)
+        && matches!(
+            format,
+            ImageFormat::Heic | ImageFormat::Avif | ImageFormat::Raw
+        )
 }
 
 /// 平台解码器能给的尺寸（WIC 读帧头，不解码像素）。非平台格式返回 `None`。
