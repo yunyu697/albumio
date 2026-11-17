@@ -1,9 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  Windows 应用清单（04-项目计划 M9）。
-  - 保留 Tauri 默认的 Common-Controls v6 依赖，否则原生控件会退回 Win95 外观。
-  - longPathAware：解除 260 字符路径限制（R10）。仍建议调用侧用 `\\?\` 前缀兜底。
-  - supportedOS 只声明 Windows 10/11：低版本系统本项目的 WebView2 也不可用。
+  Windows app manifest (plan M9). ASCII-only for local rc.exe under CP936.
+  - Keep Tauri default Common-Controls v6 dependency.
+  - longPathAware: lift the 260-char limit (R10).
+  - supportedOS declares Windows 10/11 only.
 -->
 <assembly xmlns="urn:schemas-microsoft-com:asm.v1" manifestVersion="1.0">
   <dependency>
