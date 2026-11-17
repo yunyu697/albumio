@@ -125,6 +125,23 @@ export default function App() {
   const toastIdRef = useRef(0);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const gearRef = useRef<HTMLButtonElement>(null);
+  const sortBtnRef = useRef<HTMLButtonElement>(null);
+  const [sortPopStyle, setSortPopStyle] = useState<{ left: number; top: number } | null>(null);
+
+  // 打开排序菜单时：锚定排序按钮下方（getBoundingClientRect 取位置）。
+  useEffect(() => {
+    if (!sortMenu) {
+      setSortPopStyle(null);
+      return;
+    }
+    const btn = sortBtnRef.current;
+    if (!btn) return;
+    const rect = btn.getBoundingClientRect();
+    setSortPopStyle({
+      left: rect.left,
+      top: rect.bottom + 4,
+    });
+  }, [sortMenu]);
 
   // sortMenu 的 click outside / Esc 关闭。
   useEffect(() => {
@@ -499,8 +516,8 @@ export default function App() {
         anchorRef={gearRef}
       />
 
-      {sortMenu && (
-        <div className="sort-pop" role="menu" aria-label="排序">
+      {sortMenu && sortPopStyle && (
+        <div className="sort-pop" role="menu" aria-label="排序" style={{ left: sortPopStyle.left, top: sortPopStyle.top }}>
           {SORT_OPTIONS.map((o) => (
             <button
               key={o.value}
@@ -591,6 +608,7 @@ export default function App() {
         <div className="tsep" />
         <div className="tgroup">
           <button
+            ref={sortBtnRef}
             className={`tbtn${sortMenu ? " on" : ""}`}
             title="排序"
             onClick={() => setSortMenu((v) => !v)}
