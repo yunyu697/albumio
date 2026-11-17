@@ -1,7 +1,6 @@
 // 设置面板：标题栏齿轮按钮点开的 Popover，即时生效。
 // 多 section，可滚动；关掉就是关掉，不存"取消"。
 import { useEffect, useRef } from "react";
-import { Icon } from "../icons";
 import type { ThemePref, ResolvedTheme } from "../theme";
 import type { SortMode } from "../data/source";
 
@@ -105,19 +104,18 @@ export default function SettingsPopover({
     <div className="settings-pop" ref={popRef} role="dialog" aria-label="设置">
       <div className="sp-section">
         <div className="sp-title">外观</div>
-        <div className="sp-theme-row">
+        <div className="sp-seg">
           {THEME_OPTS.map((opt) => {
             const active = themePref === opt.value;
             const live = opt.value === "auto" ? `跟随系统（当前：${resolvedTheme === "light" ? "浅" : "深"}）` : null;
             return (
               <button
                 key={opt.value}
-                className={`sp-theme-btn${active ? " on" : ""}`}
+                className={`sp-seg-item${active ? " active" : ""}`}
                 onClick={() => setThemePref(opt.value)}
                 title={live ?? opt.hint}
               >
-                <Icon id="i-check" size="xs" />
-                <span>{opt.label}</span>
+                {opt.label}
               </button>
             );
           })}
