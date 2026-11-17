@@ -239,8 +239,14 @@ jobs:
       - name: 产物名归一回 albumio_*（显示名 Albumio / 文件名 albumio 解耦）
         # productName 同时决定显示名与产物文件名，没有独立显示名字段，所以在展平之后统一改回小写前缀：
         # 用户下载名、latest.json 资产名、SHA256SUMS 与 RC6 保持一致，只有系统里显示的名字变了。
-        # 必须在签名之前，签名生成的 .sig 才会是小写名。
         run: node scripts/rename-artifacts.mjs --flat dist-flat
+      - name: 删掉构建阶段预签的 .sig（里面嵌的还是大写文件名 Albumio_*）
+        # tauri build 会给 updater 产物（.tar.gz / .AppImage / .nsis.zip）先签一遍，
+        # 签名的 trusted comment 里嵌当时的文件名。rename 之后这些文件名都变成小写，
+        # 但 .sig 里记的还是大写，minisign 校验会因为「文件名对不上」而拒绝。
+        # 索性把所有 .sig 都删掉，交给下一步 signer sign 按当前小写文件名重新签。
+        shell: bash
+        run: rm -f dist-flat/*.sig && ls -l dist-flat
       - name: 补齐未签名的安装包（更新包由构建时签名，msi/dmg/deb 在此签名）
         # signer sign 直接读取 TAURI_SIGNING_PRIVATE_KEY，不走命令行参数，避免密钥出现在进程参数与日志里。
         env:
