@@ -182,10 +182,12 @@ fn other_containers_decode() {
     }
 }
 
-/// 伪造的 HEIC 头（M5 起 Windows 走 WIC）：
-/// - 非 Windows 仍是可判定的 Unsupported；
-/// - Windows 由系统解码器报格式错误。
-/// 两边都必须是 Err——界面不能拿到一张空白图还当成功。
+/// 伪造的 HEIC 头：
+/// - 内置 libheif 的构建（macOS/Linux）由 libheif 报 Decode；
+/// - 未接入 HEIC 的构建仍是可判定的 Unsupported；
+/// - Windows 由系统 WIC 报格式错误。
+/// 共同的不变量只有一条：必须是 Err——界面不能拿到一张空白图还当成功。
+/// （RC5 起 macOS/Linux 内置 libheif，原来的 "非 Windows 一律 Unsupported" 已经过时。）
 #[test]
 fn corrupt_heic_reports_error() {
     let tmp = tempfile::tempdir().unwrap();
@@ -198,8 +200,11 @@ fn corrupt_heic_reports_error() {
     let err = p.thumbnail(&path, Level::L1).unwrap_err();
     #[cfg(not(windows))]
     assert!(
-        matches!(err, albumio_core::Error::Unsupported { .. }),
-        "{err}"
+        matches!(
+            err,
+            albumio_core::Error::Decode(_) | albumio_core::Error::Unsupported { .. }
+        ),
+        "损坏的 HEIC 必须报错，实际 {err}"
     );
     #[cfg(windows)]
     assert!(
