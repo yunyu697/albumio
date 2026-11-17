@@ -136,6 +136,40 @@
         "role": "Viewer",
         "rank": "Alternate",
         "mimeType": "image/avif"
+      },
+      {
+        "ext": [
+          "dng",
+          "cr2",
+          "cr3",
+          "crw",
+          "nef",
+          "nrw",
+          "arw",
+          "srf",
+          "sr2",
+          "raf",
+          "rw2",
+          "raw",
+          "orf",
+          "pef",
+          "rwl",
+          "srw",
+          "x3f",
+          "3fr",
+          "fff",
+          "iiq",
+          "mos",
+          "mrw",
+          "kdc",
+          "mef",
+          "erf"
+        ],
+        "name": "RAW image",
+        "description": "RAW image",
+        "role": "Viewer",
+        "rank": "Alternate",
+        "mimeType": "image/x-dcraw"
       }
     ],
     "windows": {
