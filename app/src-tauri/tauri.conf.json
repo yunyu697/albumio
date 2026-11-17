@@ -1,6 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "albumio",
+  "productName": "Albumio",
+  "mainBinaryName": "albumio",
   "version": "1.0.0-RC6",
   "identifier": "com.albumio.app",
   "build": {

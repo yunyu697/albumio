@@ -236,6 +236,11 @@ jobs:
           mkdir -p dist-flat
           find dist-release -type f \( -name '*.msi' -o -name '*.exe' -o -name '*.dmg' -o -name '*.deb' -o -name '*.AppImage' -o -name '*.app.tar.gz' -o -name '*.sig' \) -exec mv -t dist-flat {} +
           ls -l dist-flat
+      - name: 产物名归一回 albumio_*（显示名 Albumio / 文件名 albumio 解耦）
+        # productName 同时决定显示名与产物文件名，没有独立显示名字段，所以在展平之后统一改回小写前缀：
+        # 用户下载名、latest.json 资产名、SHA256SUMS 与 RC6 保持一致，只有系统里显示的名字变了。
+        # 必须在签名之前，签名生成的 .sig 才会是小写名。
+        run: node scripts/rename-artifacts.mjs --flat dist-flat
       - name: 补齐未签名的安装包（更新包由构建时签名，msi/dmg/deb 在此签名）
         # signer sign 直接读取 TAURI_SIGNING_PRIVATE_KEY，不走命令行参数，避免密钥出现在进程参数与日志里。
         env:
