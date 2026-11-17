@@ -105,6 +105,9 @@ export default function Viewer({
   const dragRef = useRef<{ x: number; y: number; px: number; py: number } | null>(null);
   const filmDragRef = useRef(false);
   const heldRef = useRef<Map<string, string>>(new Map());
+  // wheel 期间为 true → transition=none（跟手）；停 150ms 后回 false → 平滑过渡。
+  const zoomingRef = useRef(false);
+  const zoomingTimer = useRef(0);
 
   const nat = loaded ? { w: loaded.w, h: loaded.h } : null;
   const effZoom = zoom ?? fitScale;
@@ -346,6 +349,16 @@ export default function Viewer({
       ev.preventDefault();
       showChrome();
       if (!nat) return;
+
+      // wheel 期间 transition=none（跟手无极调节）。
+      zoomingRef.current = true;
+      window.clearTimeout(zoomingTimer.current);
+      zoomingTimer.current = window.setTimeout(() => {
+        zoomingRef.current = false;
+        // 强制重渲染让 photoStyle.transition 切回来。
+        setPan((p) => ({ ...p }));
+      }, 150);
+
       if (ev.shiftKey) {
         const dx = ev.deltaX || ev.deltaY;
         setPan((prev) => clampPan({ x: prev.x - dx, y: prev.y }, effZoomRef.current));
@@ -550,9 +563,8 @@ export default function Viewer({
     width: nat ? `${nat.w}px` : "100%",
     height: nat ? `${nat.h}px` : "100%",
     transform: `translate(${pan.x}px, ${pan.y}px) scale(${effZoom})`,
-    // drag 时关掉 transition（跟手平移必须即时）；wheel / 静止时给短过渡
-    // 让缩放从一个倍率平滑到下一个，而不是一顿一顿硬切。
-    transition: dragging ? "none" : "transform 120ms cubic-bezier(.22,.61,.36,1)",
+    // wheel / drag 期间关 transition（跟手无极调节）；静止后给 60ms 让键位缩放平滑过渡。
+    transition: dragging || zoomingRef.current ? "none" : "transform 60ms cubic-bezier(.22,.61,.36,1)",
   };
 
   const filmItems = items.slice(filmRange.lo, filmRange.hi);
