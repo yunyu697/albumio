@@ -78,31 +78,33 @@ pub fn has_image_ext(name: &str) -> bool {
 /// 文件名的自然序：数字段按数值比较（DSC_2 在 DSC_10 前），其余按小写字典序。
 fn natural_cmp(a: &str, b: &str) -> std::cmp::Ordering {
     use std::cmp::Ordering;
-    let mut ai = a.char_indices().peekable();
-    let mut bi = b.char_indices().peekable();
+    // 两侧都按「相对整串的绝对字节偏移」推进：比较器一旦混用切片内相对偏移，
+    // 数字段之后取到的字符就会错位，并且偏移不再前进，排序会陷入死循环。
+    let (mut i, mut j) = (0usize, 0usize);
     loop {
-        match (ai.peek().copied(), bi.peek().copied()) {
+        match (a[i..].chars().next(), b[j..].chars().next()) {
             (None, None) => return Ordering::Equal,
             (None, Some(_)) => return Ordering::Less,
             (Some(_), None) => return Ordering::Greater,
-            (Some((ap, ac)), Some((bp, bc))) => {
+            (Some(ac), Some(bc)) => {
                 if ac.is_ascii_digit() && bc.is_ascii_digit() {
-                    let (an, anext) = take_digits(a, ap);
-                    let (bn, bnext) = take_digits(b, bp);
+                    let (an, anext) = take_digits(a, i);
+                    let (bn, bnext) = take_digits(b, j);
                     let ord = an.cmp(&bn);
                     if ord != Ordering::Equal {
                         return ord;
                     }
-                    ai = a[anext..].char_indices().peekable();
-                    bi = b[bnext..].char_indices().peekable();
+                    // 数字段等值也必须各前进至少一个字符，否则比较器不收敛。
+                    i = anext;
+                    j = bnext;
                 } else {
                     let al = ac.to_ascii_lowercase();
                     let bl = bc.to_ascii_lowercase();
                     if al != bl {
                         return al.cmp(&bl);
                     }
-                    ai.next();
-                    bi.next();
+                    i += ac.len_utf8();
+                    j += bc.len_utf8();
                 }
             }
         }
@@ -304,6 +306,33 @@ mod tests {
             .map(|e| e.name)
             .collect();
         assert_eq!(names, vec!["cover.png", "DSC_2.JPG", "DSC_10.JPG"]);
+    }
+
+    /// 回归：比较器曾混用切片内相对偏移与整串绝对偏移，数字段之后偏移不再前进，
+    /// 排序永不返回，整个进程在主线程自旋（RC5 Windows 启动卡死的根因）。
+    /// 这类「共同前缀 + 两段数字」的文件名（截图/相机导出）在真实目录里极常见。
+    #[test]
+    fn natural_cmp_terminates_on_two_digit_runs() {
+        let names = [
+            "Snipaste_2025-03-20_21-28-43.png",
+            "Snipaste_2025-03-09_12-51-25.png",
+            "Snipaste_2025-03-09_12-45-53.png",
+        ];
+        let mut v: Vec<&str> = names.to_vec();
+        v.sort_by(|a, b| natural_cmp(a, b));
+        assert_eq!(
+            v,
+            vec![
+                "Snipaste_2025-03-09_12-45-53.png",
+                "Snipaste_2025-03-09_12-51-25.png",
+                "Snipaste_2025-03-20_21-28-43.png",
+            ]
+        );
+        // 前导零：数值相等但位数不同，也必须收敛。
+        assert_eq!(
+            natural_cmp("IMG_01.png", "IMG_1.png"),
+            std::cmp::Ordering::Equal
+        );
     }
 
     #[test]
