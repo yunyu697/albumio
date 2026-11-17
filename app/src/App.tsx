@@ -19,6 +19,7 @@ import {
 } from "./data/source";
 import { formatBytes } from "./format";
 import Browse, { type BrowseView, type GridStatus } from "./screens/Browse";
+import ErrorBoundary from "./components/ErrorBoundary";
 import type { SortMode } from "./data/source";
 import { isComposing, isTextInput } from "./keys";
 import { useTheme } from "./theme";
@@ -663,22 +664,24 @@ export default function App() {
             statsTotal={status.total}
           />
         )}
-        <Browse
-          dir={dir}
-          view={view}
-          reloadKey={reloadKey}
-          cellIdx={cellIdx}
-          onCellIdxChange={setCellIdx}
-          onStatus={onStatus}
-          openViewerKey={viewerRequest}
-          openEditorKey={editorRequest}
-          openBatchKey={batchRequest}
-          openFile={openFile?.path ?? null}
-          openFileKey={openFile?.key ?? 0}
-          onViewerOpen={setViewerOpen}
-          sort={sort}
-          recursive={recursive}
-        />
+        <ErrorBoundary label="主视图" onReset={() => setDir("")}>
+          <Browse
+            dir={dir}
+            view={view}
+            reloadKey={reloadKey}
+            cellIdx={cellIdx}
+            onCellIdxChange={setCellIdx}
+            onStatus={onStatus}
+            openViewerKey={viewerRequest}
+            openEditorKey={editorRequest}
+            openBatchKey={batchRequest}
+            openFile={openFile?.path ?? null}
+            openFileKey={openFile?.key ?? 0}
+            onViewerOpen={setViewerOpen}
+            sort={sort}
+            recursive={recursive}
+          />
+        </ErrorBoundary>
         <aside className="inspector" hidden={!inspectorOpen}>
           <div className="rail insp-rail">
             <button className="ibtn" title="展开检查器" data-tip="">

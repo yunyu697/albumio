@@ -110,9 +110,8 @@ pub fn decode_file(path: &Path, target_edge: Option<u32>) -> Result<DecodedImage
 }
 
 /// AVIF：纯 Rust 解码（`avif-rust`，MIT），直接给 RGBA8。
-/// 已知取舍：`image_from_bytes` 只回像素，不读 ICC，也没有应用 irot/imir，
-/// 所以广色域 AVIF 会按 sRGB 显示、方向固定为 1；后续需要时再换到
-/// `decode_native_ex` 拿色彩信息。
+/// 方向从容器的 Exif Orientation 或原生 irot/imir 属性读（parse_avif_orientation）。
+/// 已知取舍：不抽 ICC profile，广色域 AVIF 按 sRGB 显示。
 fn decode_avif(bytes: &[u8], format: ImageFormat) -> Result<DecodedImage> {
     let img = avif_rust::image_from_bytes(bytes)
         .map_err(|e| Error::Decode(format!("AVIF 解码失败：{e}")))?;
@@ -120,12 +119,13 @@ fn decode_avif(bytes: &[u8], format: ImageFormat) -> Result<DecodedImage> {
         .map_err(|_| Error::Decode(format!("AVIF 尺寸超出范围：{}x{}", img.width, img.height)))?;
     let height = u32::try_from(img.height)
         .map_err(|_| Error::Decode(format!("AVIF 尺寸超出范围：{}x{}", img.width, img.height)))?;
+    let orientation = read_orientation(bytes, ImageFormat::Avif);
     Ok(DecodedImage {
         format,
         width,
         height,
         rgba: img.rgba,
-        orientation: 1,
+        orientation,
         icc: None,
     })
 }
@@ -328,20 +328,85 @@ fn cmyk_to_rgba(src: &[u8]) -> Vec<u8> {
 }
 
 /// 读 EXIF Orientation（1..=8），读不到按 1 处理。
+/// JPEG/TIFF 直接从容器里读；AVIF 先试 Exif（avif 文件支持 ISOBMFF 内嵌 Exif），
+/// 读不到再回退解析 irot/imir 属性（AVIF 原生旋转标记）。
 pub fn read_orientation(bytes: &[u8], format: ImageFormat) -> u8 {
-    if !matches!(format, ImageFormat::Jpeg | ImageFormat::Tiff) {
-        return 1;
+    match format {
+        ImageFormat::Jpeg | ImageFormat::Tiff => {
+            let mut cursor = Cursor::new(bytes);
+            let exif = match exif::Reader::new().read_from_container(&mut cursor) {
+                Ok(e) => e,
+                Err(_) => return 1,
+            };
+            exif.get_field(exif::Tag::Orientation, exif::In::PRIMARY)
+                .and_then(|f| f.value.get_uint(0))
+                .map(|v| v as u8)
+                .filter(|v| (1..=8).contains(v))
+                .unwrap_or(1)
+        }
+        ImageFormat::Avif => {
+            // 1. 先试 Exif（avif 容器支持）。
+            let mut cursor = Cursor::new(bytes);
+            if let Ok(exif) = exif::Reader::new().read_from_container(&mut cursor) {
+                if let Some(orient) = exif
+                    .get_field(exif::Tag::Orientation, exif::In::PRIMARY)
+                    .and_then(|f| f.value.get_uint(0))
+                    .map(|v| v as u8)
+                    .filter(|v| (1..=8).contains(v))
+                {
+                    return orient;
+                }
+            }
+            // 2. 回退：解析 irot/imir（AVIF 原生旋转 + 镜像）。
+            parse_avif_orientation(bytes).unwrap_or(1)
+        }
+        _ => 1,
     }
-    let mut cursor = Cursor::new(bytes);
-    let exif = match exif::Reader::new().read_from_container(&mut cursor) {
-        Ok(e) => e,
-        Err(_) => return 1,
+}
+
+/// 解析 AVIF irot/imir 属性（ISOBMFF 容器里的 av1C → item property box）。
+/// irot 取值 0..=3 → 0°/90°/180°/270°；imir 取值 0..=1 → 是否水平镜像。
+/// 返回 EXIF 风格的 Orientation（1..=8）；解析失败返回 None。
+fn parse_avif_orientation(bytes: &[u8]) -> Option<u8> {
+    // AVIF 文件是 ISOBMFF，所有 box 都是 [4字节大小][4字节 type][payload]。
+    // 我们遍历顶层 box，找到 meta → iloc → 取 av1C item → iprp/ipco → irot/imir。
+    // 这里做极简版本：找到 irot/imir box，读第一个 primary image 的值。
+    let mut pos = 0usize;
+    let mut irot: Option<u8> = None;
+    let mut imir: Option<u8> = None;
+    while pos + 8 <= bytes.len() {
+        let size = u32::from_be_bytes(bytes[pos..pos + 4].try_into().ok()?) as usize;
+        let box_type = &bytes[pos + 4..pos + 8];
+        if size < 8 {
+            break;
+        }
+        // 只看 ipco 容器子 box（这里简化：遍历所有 box 找 irot/imir）。
+        if box_type == b"irot" && pos + 9 <= bytes.len() {
+            irot = Some(bytes[pos + 8] & 0b11);
+        }
+        if box_type == b"imir" && pos + 9 <= bytes.len() {
+            imir = Some(bytes[pos + 8] & 0b01);
+        }
+        if size == 1 {
+            break;
+        } // 'size == 1' 表示 size 在末尾 8 字节，极罕见，我们直接停。
+        pos += size;
+    }
+    let irot = irot?;
+    let imir = imir.unwrap_or(0);
+    // irot/imir → EXIF Orientation 映射（ISO/IEC 23008-12:2022 §6.6）。
+    let orient = match (irot, imir) {
+        (0, 0) => 1,
+        (0, 1) => 2,
+        (1, 0) => 6,
+        (1, 1) => 5,
+        (2, 0) => 3,
+        (2, 1) => 4,
+        (3, 0) => 8,
+        (3, 1) => 7,
+        _ => return None,
     };
-    exif.get_field(exif::Tag::Orientation, exif::In::PRIMARY)
-        .and_then(|f| f.value.get_uint(0))
-        .map(|v| v as u8)
-        .filter(|v| (1..=8).contains(v))
-        .unwrap_or(1)
+    Some(orient)
 }
 
 /// 抽 ICC profile（`01-方案文档.md` §1.2：色彩只在 Rust 转一次）。

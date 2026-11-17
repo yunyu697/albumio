@@ -110,6 +110,8 @@ export default function Browse({
   recursive,
 }: BrowseProps) {
   const [entries, setEntries] = useState<Entry[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [current, setCurrent] = useState<string | null>(null);
   const [ratings, setRatings] = useState<Map<string, number>>(new Map());
@@ -209,6 +211,8 @@ export default function Browse({
 
   useEffect(() => {
     if (!dir) return;
+    setLoading(true);
+    setLoadError(null);
     let alive = true;
     void listDir(dir, { sort, recursive })
       .then((r) => {
@@ -227,6 +231,8 @@ export default function Browse({
         takenRef.current = new Map();
         setDated(0);
         setEntries(r.entries);
+        setLoading(false);
+        setLoadError(null);
         const first = r.entries[0]?.path ?? null;
         // 只给"当前项"不给选中：未选中时状态栏中段显示目录摘要（§9）。
         setCurrent(first);
@@ -240,11 +246,13 @@ export default function Browse({
             .then((res) => applyStats(res.stats));
         }
       })
-      .catch(() => {
+      .catch((err) => {
         if (!alive) return;
         setEntries([]);
         setCurrent(null);
         setSelected(new Set());
+        setLoading(false);
+        setLoadError(err instanceof Error ? err.message : String(err));
       });
     return () => {
       alive = false;
@@ -1018,6 +1026,28 @@ export default function Browse({
 
   return (
     <>
+      {loadError ? (
+        <div className="state-overlay">
+          <div className="state-card state-error">
+            <div className="state-title">目录打不开</div>
+            <div className="state-msg">{loadError}</div>
+          </div>
+        </div>
+      ) : loading ? (
+        <div className="state-overlay">
+          <div className="state-card">
+            <div className="state-spinner" />
+            <div className="state-title">加载中…</div>
+          </div>
+        </div>
+      ) : dir && entries.length === 0 ? (
+        <div className="state-overlay">
+          <div className="state-card">
+            <div className="state-title">这个目录没有图片</div>
+            <div className="state-msg">试着选另一个文件夹，或开启穿透子目录</div>
+          </div>
+        </div>
+      ) : null}
       <Grid
         items={viewEntries}
         groups={groups}

@@ -229,6 +229,68 @@ input { font: inherit; color: inherit; }
 .sort-item .i { width: 14px; height: 14px; color: transparent; }
 .sort-item.on .i { color: var(--ds-color-accent); }
 
+/* Browse 加载 / 空 / 错误 状态浮层 */
+.state-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 50;
+  display: grid;
+  place-items: center;
+  background: var(--ds-color-surface);
+  pointer-events: none; /* 不拦截底层的侧栏/标题栏交互 */
+}
+.state-card {
+  pointer-events: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--ds-space-2);
+  padding: var(--ds-space-5);
+  color: var(--ds-color-text-muted);
+}
+.state-title {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--ds-color-text);
+}
+.state-msg {
+  font-size: 12px;
+}
+.state-error .state-title { color: var(--ds-color-danger); }
+.state-spinner {
+  width: 24px;
+  height: 24px;
+  border: 2px solid var(--ds-color-line);
+  border-top-color: var(--ds-color-accent);
+  border-radius: 50%;
+  animation: state-spin .8s linear infinite;
+}
+@keyframes state-spin { to { transform: rotate(360deg); } }
+
+/* ErrorBoundary fallback */
+.eb-root {
+  position: fixed; inset: 0; z-index: 10000;
+  display: grid; place-items: center;
+  background: rgba(0,0,0,.5);
+}
+.eb-card {
+  background: var(--ds-color-surface);
+  border: var(--ds-border-hairline) solid var(--ds-color-line-strong);
+  border-radius: var(--ds-radius-md);
+  padding: var(--ds-space-5);
+  max-width: 420px;
+  display: flex; flex-direction: column; gap: var(--ds-space-3);
+}
+.eb-title { font-size: 14px; font-weight: 600; color: var(--ds-color-danger); }
+.eb-msg { font-size: 12px; color: var(--ds-color-text-muted); font-family: monospace; word-break: break-all; }
+.eb-actions { display: flex; gap: var(--ds-space-2); justify-content: flex-end; }
+.eb-btn {
+  padding: 6px 14px; font-size: 13px;
+  background: var(--ds-color-accent); color: #fff;
+  border-radius: var(--ds-radius-sm);
+}
+.eb-btn.secondary { background: var(--ds-color-hover); color: var(--ds-color-text); }
+
 /* 工具条 */
 .toolbar {
   height: var(--lv-toolbar-h);
@@ -415,16 +477,32 @@ input[type=range].lr::-moz-range-thumb {
 .tile-cap {
   height: var(--lv-cell-caption);
   display: flex;
-  align-items: center;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 1px;
   font-size: var(--ds-font-size-11);
   line-height: var(--ds-leading-snug);
   color: var(--ds-color-on-media);
   opacity: .72;
-  white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   padding-top: var(--ds-space-2);
   transition: opacity var(--ds-dur-2) var(--ds-ease-standard);
+}
+.tile-name {
+  white-space: nowrap;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tile-sub {
+  font-size: 10px;
+  opacity: .55;
+  white-space: nowrap;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .tile-badge {
   position: absolute;

@@ -345,7 +345,12 @@ export default function Grid({
                         </button>
                       </div>
                     </div>
-                    <div className="tile-cap">{item.name}</div>
+                    <div className="tile-cap">
+                      <span className="tile-name">{item.name}</span>
+                      {item.relPath && item.relPath.length > 0 ? (
+                        <span className="tile-sub">{item.relPath}</span>
+                      ) : null}
+                    </div>
                   </div>
                 );
               })}
