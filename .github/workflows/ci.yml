@@ -70,3 +70,31 @@ jobs:
         run: cargo clippy --manifest-path app/src-tauri/Cargo.toml --all-targets
       - name: 单元与集成测试（--workspace：src-tauri 是工作区根，不带就会漏掉 albumio-core）
         run: cargo test --manifest-path app/src-tauri/Cargo.toml --workspace
+
+  # 启动冒烟（Windows 真机）：把 RC5「打开即卡死」的手工验证变成自动门禁。
+  # 断言三件事：进程不提前退出、超时内主窗口 Responding=True、缩略图目录有新增产出
+  # （证明前端真的跑起来了：列举 → stat → 缩略图整条链路）。失败会按
+  # window-unresponsive / pipeline-no-output / exited-early 明确分类。
+  # 冒烟目录里刻意放了「共同前缀 + 两段数字」的截图/相机式文件名，正是 RC5 死循环的触发形状。
+  smoke-windows:
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: app/src-tauri -> target
+      - run: npm ci
+      - name: 构建（不打包，前端资源内嵌）
+        run: npm run tauri build -- --no-bundle
+      - name: 启动冒烟：窗口响应 + 缩略图产出
+        working-directory: .
+        run: pwsh -NoProfile -File scripts/smoke-windows.ps1 -Exe app/src-tauri/target/release/albumio.exe -TimeoutSec 60
