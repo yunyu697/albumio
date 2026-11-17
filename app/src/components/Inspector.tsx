@@ -12,7 +12,7 @@
 import { useEffect, useState } from "react";
 import { Icon } from "../icons";
 import { loadMeta, type MetaSource, type PhotoMeta } from "../data/meta";
-import { releaseThumb, thumbUrl } from "../data/source";
+import { previewUrl, releasePreview } from "../data/source";
 
 interface InspectorProps {
   path: string | null;
@@ -138,10 +138,10 @@ export default function Inspector({ path, rating, onMeta }: InspectorProps) {
       return;
     }
     let alive = true;
-    void thumbUrl(path, "l1")
+    void previewUrl(path)
       .then((u) => {
         if (alive) setPreview(u);
-        else releaseThumb(path, "l1", u);
+        else releasePreview(path, u);
       })
       .catch(() => {
         if (alive) setPreview(null);
