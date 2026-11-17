@@ -3,7 +3,7 @@ name = "albumio-core"
 version = "0.1.0"
 description = "Albumio 图像管线：探测、解码、方向、色彩、缩略图、缓存"
 edition = "2021"
-rust-version = "1.88"
+rust-version = "1.90"
 
 [dependencies]
 zune-jpeg = "0.5"
@@ -25,13 +25,17 @@ trash = "5"
 # 目录监听（M8）：参数与平台差异见 `docs/spike/S6.md`，锁 8.x（9.x 还在 rc）。
 notify = "8"
 rawler = "0.7.1"
+# AVIF（M1）：纯 Rust 解码（MIT）。三平台同一套代码，不引入 dav1d/libavif 的
+# 原生库与 nasm/cmake 构建依赖，也不依赖 Windows 的 AV1 视频扩展是否安装。
+avif-rust = "0.3"
 
 # 撤销要扫 `$Recycle.Bin` 下的 `$I` 记录，需要一次目录遍历就拿到文件名 + 修改时间
 # （std 的 read_dir 不给时间，逐条 stat 在 1.7 万条时要 1.4 s）。
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_Storage_FileSystem"] }
-# HEIC / AVIF / RAW：系统 WIC（`docs/spike/S2-decoders.md`）。windows-sys 的
+# HEIC：Windows 走系统 WIC（`docs/spike/S2-decoders.md`）。windows-sys 的
 # 裸 COM vtable 写起来太容易错，这里用 0.62 的强类型绑定；它已经在依赖图里。
+# RAW/AVIF 不走 WIC：RAW 用 rawler 抽内嵌预览，AVIF 用 avif-rust，三平台同一套代码。
 windows = { version = "0.62", features = ["Win32_Foundation", "Win32_System_Com", "Win32_Graphics_Imaging"] }
 
 # 磁盘用量：statvfs（只在侧栏的用量块用，不引 sysinfo）。

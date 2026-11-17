@@ -182,6 +182,39 @@ fn other_containers_decode() {
     }
 }
 
+/// AVIF 走纯 Rust 解码（不依赖系统 AV1 扩展）。参考像素由 ffmpeg(libaom)
+/// 解同一个 fixture 得到；整帧对比过一张真实照片（800×600）：MAE 2.66、最大差 24，
+/// 差异来自 YUV→RGB 舍入与色度上采样，不是色彩矩阵或量程错位（逐通道偏置 < 2）。
+#[test]
+fn avif_decodes_with_pure_rust_and_matches_reference_pixels() {
+    let bytes = fs::read(fixture("sample.avif")).unwrap();
+    assert_eq!(
+        probe_bytes(&bytes),
+        Some(ImageFormat::Avif),
+        "AVIF 魔数探测不对"
+    );
+    let d = decode_bytes(&bytes, ImageFormat::Avif, None).unwrap();
+    assert_eq!((d.width, d.height), (160, 120));
+    assert_eq!(d.orientation, 1);
+    for ((x, y), want) in [
+        ((80, 60), [1, 0, 255]),
+        ((10, 10), [254, 127, 0]),
+        ((150, 110), [0, 255, 255]),
+    ] {
+        let i = (y * 160 + x) * 4;
+        let got = &d.rgba[i..i + 4];
+        for (c, w) in want.iter().enumerate() {
+            let diff = (got[c] as i32 - *w as i32).abs();
+            assert!(
+                diff <= 24,
+                "({x},{y}) 通道 {c} 期望 {w}，实际 {}，差 {diff}",
+                got[c]
+            );
+        }
+        assert_eq!(got[3], 255, "({x},{y}) alpha 必须是不透明");
+    }
+}
+
 /// 伪造的 HEIC 头：
 /// - 内置 libheif 的构建（macOS/Linux）由 libheif 报 Decode；
 /// - 未接入 HEIC 的构建仍是可判定的 Unsupported；

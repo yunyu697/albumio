@@ -1,17 +1,17 @@
 //! 解码：JPEG 走 zune-jpeg（全解码）/ jpeg-decoder（分数缩放解码），其余走 `image`；
-//! Windows 上 HEIC/AVIF 走系统 WIC（`docs/spike/S2-decoders.md`）；
-//! macOS/Linux 的 HEIC 走内置 libheif（M9 决策），AVIF 仍返回可判定的 Unsupported；
+//! HEIC 在 Windows 走系统 WIC、macOS/Linux 走内置 libheif（M9 决策）；
+//! AVIF 三平台统一走纯 Rust 解码（不依赖系统 AV1 扩展）；
 //! RAW 三平台统一用 rawler 只抽内嵌预览（不做 demosaic）。
 
 use crate::{Error, ImageFormat, Result};
 use std::io::Cursor;
 use std::path::Path;
 
-/// Windows 上这两类格式交给 WIC；macOS/Linux 只有 HEIC 走内置 libheif。
-/// RAW 不走 WIC：一来三平台行为要一致，二来 WIC 的 RAW 解码还依赖
-/// Microsoft Store 的「Raw 图像扩展」，装了没装表现不同。
+/// 只有 Windows 上的 HEIC 交给 WIC 之外的平台解码器；其余格式都走本模块。
+/// AVIF 不再走 WIC：Windows 的 AVIF 支持依赖商店里的「AV1 视频扩展」，
+/// 装了没装表现不同，而纯 Rust 解码三平台一致。
 pub fn uses_platform_codec(format: ImageFormat) -> bool {
-    cfg!(windows) && matches!(format, ImageFormat::Heic | ImageFormat::Avif)
+    cfg!(windows) && matches!(format, ImageFormat::Heic)
 }
 
 /// 只能按文件路径解码的格式（rawler 从文件里定位内嵌预览，不把几十 MB 读进内存）。
@@ -62,10 +62,7 @@ pub fn decode_bytes(
                 })
             }
         }
-        ImageFormat::Avif => Err(Error::Unsupported {
-            format,
-            reason: "dav1d 未接入（04-项目计划 M1）".to_string(),
-        }),
+        ImageFormat::Avif => decode_avif(bytes, format),
         ImageFormat::Raw => Err(Error::Unsupported {
             format,
             reason: "RAW 只抽内嵌预览，需要文件路径（走 decode_file）".to_string(),
@@ -110,6 +107,27 @@ pub fn decode_file(path: &Path, target_edge: Option<u32>) -> Result<DecodedImage
 
     let bytes = std::fs::read(path)?;
     decode_bytes(&bytes, format, target_edge)
+}
+
+/// AVIF：纯 Rust 解码（`avif-rust`，MIT），直接给 RGBA8。
+/// 已知取舍：`image_from_bytes` 只回像素，不读 ICC，也没有应用 irot/imir，
+/// 所以广色域 AVIF 会按 sRGB 显示、方向固定为 1；后续需要时再换到
+/// `decode_native_ex` 拿色彩信息。
+fn decode_avif(bytes: &[u8], format: ImageFormat) -> Result<DecodedImage> {
+    let img = avif_rust::image_from_bytes(bytes)
+        .map_err(|e| Error::Decode(format!("AVIF 解码失败：{e}")))?;
+    let width = u32::try_from(img.width)
+        .map_err(|_| Error::Decode(format!("AVIF 尺寸超出范围：{}x{}", img.width, img.height)))?;
+    let height = u32::try_from(img.height)
+        .map_err(|_| Error::Decode(format!("AVIF 尺寸超出范围：{}x{}", img.width, img.height)))?;
+    Ok(DecodedImage {
+        format,
+        width,
+        height,
+        rgba: img.rgba,
+        orientation: 1,
+        icc: None,
+    })
 }
 
 /// RAW：只抽内嵌预览（`01-方案文档.md` §6.3「RAW 预览」），不做 demosaic。
