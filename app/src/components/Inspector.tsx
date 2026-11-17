@@ -28,6 +28,11 @@ const SOURCE_LABEL: Record<MetaSource, string> = {
   inferred: "推断",
 };
 
+/** 格式显示名。RAW 只抽内嵌预览（不做 demosaic），必须让用户知道所见非全解。 */
+function formatLabel(format: string): string {
+  return format === "raw" ? "RAW（仅预览）" : format.toUpperCase();
+}
+
 function formatBytes(n: number): string {
   if (n <= 0) return "—";
   const units = ["B", "KB", "MB", "GB"];
@@ -199,7 +204,7 @@ export default function Inspector({ path, rating, onMeta }: InspectorProps) {
         cls="key"
       />
       <Field k="大小" v={m ? formatBytes(m.size) : "—"} cls="mono" />
-      <Field k="格式" v={m ? m.format.toUpperCase() : "—"} />
+      <Field k="格式" v={m ? formatLabel(m.format) : "—"} />
       <Field k="修改时间" v={m ? formatLocal(m.mtimeNs / 1e6) : "—"} cls="mono" />
       <Field
         k="拍摄时间"

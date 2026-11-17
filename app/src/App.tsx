@@ -38,7 +38,8 @@ const EMPTY_STATUS: GridStatus = {
 };
 
 /** M9：拖放/关联进来的是不是本项目支持的图片（与 Rust 侧 read_images 的扩展名表一致）。 */
-const IMAGE_EXT = /\.(jpe?g|png|webp|heic|heif|heics|heifs|tiff?|bmp|gif|avif)$/i;
+const IMAGE_EXT =
+  /\.(jpe?g|png|webp|heic|heif|heics|heifs|tiff?|bmp|gif|avif|dng|cr2|cr3|crw|nef|nrw|arw|srf|sr2|raf|rw2|raw|orf|pef|rwl|srw|x3f|3fr|fff|iiq|mos|mrw|kdc|mef|erf)$/i;
 
 /** 墙上时间：EXIF/XMP 给的是"拍摄地时间"，直接用；推断值用本机 mtime 格式化。 */
 function formatLocal(ms: number): string {

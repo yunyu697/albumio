@@ -17,9 +17,11 @@ use std::sync::Mutex;
 
 /// 网格认的图片扩展名。不含 HEIC/RAW 的可见性差异：这些格式能否解码由管线决定，
 /// 列举阶段只按扩展名收进来，解码失败会在缩略图上显式报错，而不是悄悄消失。
+/// RAW 部分必须和 `probe::RAW_EXTS` 对齐，否则会出现「能解码但列不出来」。
 pub const IMAGE_EXTS: &[&str] = &[
     "jpg", "jpeg", "png", "tif", "tiff", "bmp", "webp", "gif", "heic", "heif", "avif", "dng",
-    "arw", "cr2", "cr3", "nef", "raf", "rw2", "orf",
+    "arw", "cr2", "cr3", "crw", "nef", "nrw", "raf", "rw2", "raw", "orf", "pef", "rwl", "srw",
+    "srf", "sr2", "x3f", "3fr", "fff", "iiq", "mos", "mrw", "kdc", "mef", "erf",
 ];
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -289,6 +291,15 @@ mod tests {
 
     fn make_dir() -> tempfile::TempDir {
         tempfile::tempdir().unwrap()
+    }
+
+    /// 列举扩展名必须覆盖 probe 认的全部 RAW 扩展名，否则会出现
+    /// 「管线能解、网格里却看不到」的静默缺失。
+    #[test]
+    fn listing_covers_every_raw_extension() {
+        for ext in crate::probe::RAW_EXTS {
+            assert!(IMAGE_EXTS.contains(ext), "IMAGE_EXTS 缺少 RAW 扩展名 {ext}");
+        }
     }
 
     #[test]

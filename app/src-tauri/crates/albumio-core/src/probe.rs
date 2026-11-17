@@ -57,12 +57,40 @@ pub fn probe_bytes(bytes: &[u8]) -> Option<ImageFormat> {
     None
 }
 
+/// RAW 家族的扩展名。TIFF 系 RAW（CR2/NEF/ARW/DNG/ORF/RW2…）与普通 TIFF
+/// 共用同一个魔数，只靠字节分不开，只能再拿扩展名收窄；CR3 的 `crx ` 品牌
+/// 则能直接由魔数判定。
+pub(crate) const RAW_EXTS: &[&str] = &[
+    "dng", "cr2", "cr3", "crw", "nef", "nrw", "arw", "srf", "sr2", "raf", "rw2", "raw", "orf",
+    "pef", "rwl", "srw", "x3f", "3fr", "fff", "iiq", "mos", "mrw", "kdc", "mef", "erf",
+];
+
+pub fn is_raw_ext(path: &std::path::Path) -> bool {
+    path.extension()
+        .and_then(|e| e.to_str())
+        .map(|e| RAW_EXTS.iter().any(|x| x.eq_ignore_ascii_case(e)))
+        .unwrap_or(false)
+}
+
+/// 用扩展名细化魔数结果：TIFF 魔数 + RAW 扩展名才算 Raw，否则 `.tif/.tiff`
+/// 会被误判成 RAW。反过来，扩展名是 RAW 但魔数不是 TIFF（如 CR3）时以魔数为准，
+/// 不做任何覆盖。
+fn refine(path: &std::path::Path, format: ImageFormat) -> ImageFormat {
+    if format == ImageFormat::Tiff && is_raw_ext(path) {
+        ImageFormat::Raw
+    } else {
+        format
+    }
+}
+
 pub fn probe_file(path: &std::path::Path) -> crate::Result<ImageFormat> {
     use std::io::Read;
     let mut f = std::fs::File::open(path)?;
     let mut head = [0u8; HEAD];
     let n = f.read(&mut head)?;
-    probe_bytes(&head[..n]).ok_or_else(|| crate::Error::UnknownFormat(path.display().to_string()))
+    let format = probe_bytes(&head[..n])
+        .ok_or_else(|| crate::Error::UnknownFormat(path.display().to_string()))?;
+    Ok(refine(path, format))
 }
 
 #[cfg(test)]
@@ -88,5 +116,32 @@ mod tests {
         avif[8..12].copy_from_slice(b"avif");
         assert_eq!(probe_bytes(&avif), Some(ImageFormat::Avif));
         assert_eq!(probe_bytes(b"not an image at all"), None);
+    }
+
+    /// TIFF 系 RAW 与普通 TIFF 魔数相同，只能靠扩展名区分；
+    /// 反过来 `.tif` 不能被 RAW 扩展名规则误伤。
+    #[test]
+    fn tiff_raw_is_separated_by_extension() {
+        let dir = tempfile::tempdir().unwrap();
+        let magic = b"II\x2A\x00\x08\x00\x00\x00";
+        for (name, expect) in [
+            ("IMG_0001.CR2", ImageFormat::Raw),
+            ("DSC_0007.NEF", ImageFormat::Raw),
+            ("P1000123.ARW", ImageFormat::Raw),
+            ("scan.tif", ImageFormat::Tiff),
+            ("scan.TIFF", ImageFormat::Tiff),
+        ] {
+            let path = dir.path().join(name);
+            std::fs::write(&path, magic).unwrap();
+            assert_eq!(probe_file(&path).unwrap(), expect, "{name}");
+        }
+    }
+
+    #[test]
+    fn cr3_brand_is_detected_as_raw_by_magic() {
+        let mut cr3 = vec![0u8; 24];
+        cr3[4..8].copy_from_slice(b"ftyp");
+        cr3[8..12].copy_from_slice(b"crx ");
+        assert_eq!(probe_bytes(&cr3), Some(ImageFormat::Raw));
     }
 }

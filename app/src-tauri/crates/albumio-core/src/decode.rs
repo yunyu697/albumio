@@ -1,18 +1,22 @@
 //! 解码：JPEG 走 zune-jpeg（全解码）/ jpeg-decoder（分数缩放解码），其余走 `image`；
-//! Windows 上 HEIC/AVIF/RAW 走系统 WIC（`docs/spike/S2-decoders.md`）；
-//! macOS/Linux 的 HEIC 走内置 libheif（M9 决策），AVIF/RAW 仍返回可判定的 Unsupported。
+//! Windows 上 HEIC/AVIF 走系统 WIC（`docs/spike/S2-decoders.md`）；
+//! macOS/Linux 的 HEIC 走内置 libheif（M9 决策），AVIF 仍返回可判定的 Unsupported；
+//! RAW 三平台统一用 rawler 只抽内嵌预览（不做 demosaic）。
 
 use crate::{Error, ImageFormat, Result};
 use std::io::Cursor;
 use std::path::Path;
 
-/// Windows 上这三类格式交给 WIC；macOS/Linux 只有 HEIC 走内置 libheif。
+/// Windows 上这两类格式交给 WIC；macOS/Linux 只有 HEIC 走内置 libheif。
+/// RAW 不走 WIC：一来三平台行为要一致，二来 WIC 的 RAW 解码还依赖
+/// Microsoft Store 的「Raw 图像扩展」，装了没装表现不同。
 pub fn uses_platform_codec(format: ImageFormat) -> bool {
-    cfg!(windows)
-        && matches!(
-            format,
-            ImageFormat::Heic | ImageFormat::Avif | ImageFormat::Raw
-        )
+    cfg!(windows) && matches!(format, ImageFormat::Heic | ImageFormat::Avif)
+}
+
+/// 只能按文件路径解码的格式（rawler 从文件里定位内嵌预览，不把几十 MB 读进内存）。
+pub fn needs_path(format: ImageFormat) -> bool {
+    format == ImageFormat::Raw
 }
 
 /// 平台解码器能给的尺寸（WIC 读帧头，不解码像素）。非平台格式返回 `None`。
@@ -58,13 +62,13 @@ pub fn decode_bytes(
                 })
             }
         }
-        ImageFormat::Avif | ImageFormat::Raw => Err(Error::Unsupported {
+        ImageFormat::Avif => Err(Error::Unsupported {
             format,
-            reason: match format {
-                ImageFormat::Avif => "dav1d 未接入（04-项目计划 M1）",
-                _ => "rawler 未接入（04-项目计划 M1）",
-            }
-            .to_string(),
+            reason: "dav1d 未接入（04-项目计划 M1）".to_string(),
+        }),
+        ImageFormat::Raw => Err(Error::Unsupported {
+            format,
+            reason: "RAW 只抽内嵌预览，需要文件路径（走 decode_file）".to_string(),
         }),
         _ => {
             let img_fmt = match format {
@@ -93,22 +97,60 @@ pub fn decode_bytes(
 
 pub fn decode_file(path: &Path, target_edge: Option<u32>) -> Result<DecodedImage> {
     // 先读 64 字节判格式：HEIC 可能是几十 MB，不能为了探测整份读进内存。
-    let mut head = [0u8; 64];
-    let n = {
-        use std::io::Read;
-        let mut f = std::fs::File::open(path)?;
-        f.read(&mut head)?
-    };
-    let format = crate::probe::probe_bytes(&head[..n])
-        .ok_or_else(|| Error::UnknownFormat(path.display().to_string()))?;
+    let format = crate::probe::probe_file(path)?;
 
     #[cfg(windows)]
     if uses_platform_codec(format) {
         return crate::wic::decode_path(path, format, target_edge);
     }
 
+    if needs_path(format) {
+        return decode_raw(path);
+    }
+
     let bytes = std::fs::read(path)?;
     decode_bytes(&bytes, format, target_edge)
+}
+
+/// RAW：只抽内嵌预览（`01-方案文档.md` §6.3「RAW 预览」），不做 demosaic。
+/// 预览通常是相机写的全尺寸或半尺寸 JPEG，足以支撑网格、全屏看图与挑片；
+/// 抽不到预览的机型直接报错，界面上说清「该文件没有内嵌预览」，而不是给一张假图。
+fn decode_raw(path: &Path) -> Result<DecodedImage> {
+    let preview = rawler::analyze::extract_preview_pixels(
+        path,
+        &rawler::decoders::RawDecodeParams::default(),
+    )
+    .map_err(|e| Error::Decode(format!("RAW 内嵌预览提取失败：{e}")))?;
+    let rgba = preview.to_rgba8();
+    let (width, height) = rgba.dimensions();
+    Ok(DecodedImage {
+        format: ImageFormat::Raw,
+        width,
+        height,
+        rgba: rgba.into_raw(),
+        // 预览像素本身不带方向；方向只在容器 EXIF 里，读不到就按 1 处理。
+        orientation: read_orientation_file(path),
+        icc: None,
+    })
+}
+
+/// 从文件容器读 EXIF Orientation（RAW 在 `decode_file` 里走这条）。
+/// CR3 这类 ISOBMFF 容器 exif 读不了，返回 1。
+fn read_orientation_file(path: &Path) -> u8 {
+    let file = match std::fs::File::open(path) {
+        Ok(f) => f,
+        Err(_) => return 1,
+    };
+    let mut reader = std::io::BufReader::new(file);
+    match exif::Reader::new().read_from_container(&mut reader) {
+        Ok(exif) => exif
+            .get_field(exif::Tag::Orientation, exif::In::PRIMARY)
+            .and_then(|f| f.value.get_uint(0))
+            .map(|v| v as u8)
+            .filter(|v| (1..=8).contains(v))
+            .unwrap_or(1),
+        Err(_) => 1,
+    }
 }
 
 /// HEIC：macOS/Linux 用内置 libheif 解码成 RGBA。libheif 会应用 irot/imir 与裁剪，
@@ -345,6 +387,26 @@ mod tests {
         // 空字节不是合法 ISOBMFF：Windows 走 WIC 前的 decode_bytes 分支应报 Unsupported，
         // macOS/Linux 由 libheif 报解码错误——两边都必须是 Err，不能 panic。
         assert!(decode_bytes(&[], ImageFormat::Heic, None).is_err());
+    }
+
+    /// RAW 只按文件路径抽内嵌预览：字节入口必须给可判定的 Unsupported，
+    /// 不能被当成 TIFF 硬解出一张传感器原始数据。
+    #[test]
+    fn raw_bytes_decode_is_unsupported_and_path_based_is_required() {
+        assert!(needs_path(ImageFormat::Raw));
+        assert!(matches!(
+            decode_bytes(b"II\x2A\x00", ImageFormat::Raw, None),
+            Err(Error::Unsupported { .. })
+        ));
+    }
+
+    /// 没有内嵌预览 / 结构损坏的 RAW 必须报错，不能 panic。
+    #[test]
+    fn broken_raw_errors_instead_of_panicking() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("broken.dng");
+        std::fs::write(&path, b"II\x2A\x00\x08\x00\x00\x00not a real dng").unwrap();
+        assert!(decode_file(&path, None).is_err());
     }
 
     #[test]
