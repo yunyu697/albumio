@@ -105,9 +105,11 @@ export default function App() {
   const [sidebarOpen, setSidebarOpen] = useState(prefsRef.current.sidebarOpen);
   const [dir, setDir] = useState("");
   const [view, setView] = useState<BrowseView>(prefsRef.current.view);
-  const [sort, setSort] = useState<SortMode>("nameAsc");
+  const [sort, setSort] = useState<SortMode>(prefsRef.current.sort);
   const [sortMenu, setSortMenu] = useState(false);
-  const [recursive, setRecursive] = useState(false);
+  const [reopenLastDir, setReopenLastDir] = useState(prefsRef.current.reopenLastDir);
+  const [recursive, setRecursive] = useState(prefsRef.current.defaultRecursiveDepth > 0);
+  const [recursiveDepth, setRecursiveDepth] = useState(prefsRef.current.defaultRecursiveDepth);
   const [reloadKey, setReloadKey] = useState(0);
   const [hist, setHist] = useState<{ list: string[]; i: number }>({ list: [], i: -1 });
   // 屏 2（M5）：viewer 挂在 Browse 里（它持有 entries/评分/收藏），App 只留
@@ -279,8 +281,26 @@ export default function App() {
 
   // 偏好持久化：状态变了就存，窗口状态用单独的 effect（只在 Resized/Moved 事件里存）。
   useEffect(() => {
-    savePrefs({ sidebarOpen, inspectorOpen, cellIdx, view });
-  }, [sidebarOpen, inspectorOpen, cellIdx, view]);
+    savePrefs({
+      sidebarOpen,
+      inspectorOpen,
+      cellIdx,
+      view,
+      sort,
+      defaultRecursiveDepth: recursiveDepth,
+      reopenLastDir,
+      lastDir: dir || prefsRef.current.lastDir,
+    });
+  }, [sidebarOpen, inspectorOpen, cellIdx, view, sort, recursiveDepth, reopenLastDir, dir]);
+
+  // 启动时：如果 reopenLastDir 且有 lastDir，自动打开。
+  useEffect(() => {
+    if (reopenLastDir && prefsRef.current.lastDir && !dir) {
+      openDir(prefsRef.current.lastDir);
+    }
+    // 只在启动时跑一次
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // 窗口状态持久化：启动时还原 + Resized/Moved 时存（防抖 300ms，避免每像素写 localStorage）。
   useEffect(() => {
@@ -513,6 +533,16 @@ export default function App() {
         onToggleSidebar={() => setSidebarOpen((v) => !v)}
         inspectorOpen={inspectorOpen}
         onToggleInspector={() => setInspectorOpen((v) => !v)}
+        cellIdx={cellIdx}
+        onCellIdxChange={setCellIdx}
+        view={view}
+        onViewChange={setView}
+        sort={sort}
+        onSortChange={setSort}
+        recursiveDepth={recursiveDepth}
+        onRecursiveDepthChange={setRecursiveDepth}
+        reopenLastDir={reopenLastDir}
+        onReopenLastDirChange={setReopenLastDir}
         anchorRef={gearRef}
       />
 
@@ -698,6 +728,7 @@ export default function App() {
             onViewerOpen={setViewerOpen}
             sort={sort}
             recursive={recursive}
+            maxDepth={recursive ? recursiveDepth : 4}
           />
         </ErrorBoundary>
         <aside className="inspector" hidden={!inspectorOpen}>

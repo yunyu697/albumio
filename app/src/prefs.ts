@@ -1,6 +1,8 @@
 // 应用偏好：localStorage 封装（统一前缀、默认值、异常静默）。
 // 主题偏好走 theme.ts 自己的 key（兼容现有代码）；其余这里统一存取。
 
+import type { SortMode } from "./data/source";
+
 const PREFIX = "albumio.";
 
 export interface Prefs {
@@ -8,6 +10,10 @@ export interface Prefs {
   inspectorOpen: boolean;
   cellIdx: number; // 0–4
   view: "folder" | "timeline";
+  sort: SortMode;
+  defaultRecursiveDepth: number; // 0=关闭 / 2 / 4 / 6
+  reopenLastDir: boolean;
+  lastDir: string | null;
   window: { width: number; height: number; x: number; y: number; maximized: boolean } | null;
 }
 
@@ -16,12 +22,19 @@ const DEFAULTS: Prefs = {
   inspectorOpen: true,
   cellIdx: 2,
   view: "folder",
+  sort: "nameAsc",
+  defaultRecursiveDepth: 0,
+  reopenLastDir: true,
+  lastDir: null,
   window: null,
 };
 
 function key(k: keyof Prefs): string {
   return PREFIX + k;
 }
+
+const SORT_MODES: SortMode[] = ["nameAsc", "folderThenName", "nameDesc", "mtimeDesc", "sizeDesc"];
+const VALID_DEPTHS = [0, 2, 4, 6];
 
 export function loadPrefs(): Prefs {
   const out = { ...DEFAULTS };
@@ -37,6 +50,17 @@ export function loadPrefs(): Prefs {
     }
     const v = localStorage.getItem(key("view"));
     if (v === "folder" || v === "timeline") out.view = v;
+    const sort = localStorage.getItem(key("sort")) as SortMode | null;
+    if (sort && SORT_MODES.includes(sort)) out.sort = sort;
+    const rd = localStorage.getItem(key("defaultRecursiveDepth"));
+    if (rd) {
+      const n = parseInt(rd, 10);
+      if (VALID_DEPTHS.includes(n)) out.defaultRecursiveDepth = n;
+    }
+    const rl = localStorage.getItem(key("reopenLastDir"));
+    if (rl) out.reopenLastDir = rl === "1";
+    const ld = localStorage.getItem(key("lastDir"));
+    if (ld) out.lastDir = ld;
     const w = localStorage.getItem(key("window"));
     if (w) {
       try {
@@ -60,6 +84,15 @@ export function savePrefs(p: Partial<Prefs>): void {
     if (typeof p.inspectorOpen === "boolean") localStorage.setItem(key("inspectorOpen"), p.inspectorOpen ? "1" : "0");
     if (typeof p.cellIdx === "number") localStorage.setItem(key("cellIdx"), String(p.cellIdx));
     if (p.view === "folder" || p.view === "timeline") localStorage.setItem(key("view"), p.view);
+    if (p.sort && SORT_MODES.includes(p.sort)) localStorage.setItem(key("sort"), p.sort);
+    if (typeof p.defaultRecursiveDepth === "number" && VALID_DEPTHS.includes(p.defaultRecursiveDepth)) {
+      localStorage.setItem(key("defaultRecursiveDepth"), String(p.defaultRecursiveDepth));
+    }
+    if (typeof p.reopenLastDir === "boolean") localStorage.setItem(key("reopenLastDir"), p.reopenLastDir ? "1" : "0");
+    if ("lastDir" in p) {
+      if (p.lastDir) localStorage.setItem(key("lastDir"), p.lastDir);
+      else localStorage.removeItem(key("lastDir"));
+    }
     if ("window" in p) {
       if (p.window) {
         localStorage.setItem(key("window"), JSON.stringify(p.window));

@@ -76,6 +76,8 @@ interface BrowseProps {
   sort: SortMode;
   /** 递归列举子目录（穿透）。 */
   recursive: boolean;
+  /** 穿透最大深度（0 关闭 / 2 / 4 / 6）；recursive=false 时忽略。 */
+  maxDepth: number;
 }
 
 interface Range {
@@ -108,6 +110,7 @@ export default function Browse({
   onViewerOpen,
   sort,
   recursive,
+  maxDepth,
 }: BrowseProps) {
   const [entries, setEntries] = useState<Entry[]>([]);
   const [loading, setLoading] = useState(false);
@@ -214,7 +217,7 @@ export default function Browse({
     setLoading(true);
     setLoadError(null);
     let alive = true;
-    void listDir(dir, { sort, recursive })
+    void listDir(dir, { sort, recursive, maxDepth })
       .then((r) => {
         if (!alive) return;
         generationRef.current = r.generation;
@@ -257,7 +260,7 @@ export default function Browse({
     return () => {
       alive = false;
     };
-  }, [dir, reload, reloadKey, sort, recursive]);
+  }, [dir, reload, reloadKey, sort, recursive, maxDepth]);
 
   // 时间线：按批读拍摄时间（一批 250，串行——EXIF 读取是磁盘操作，并发只会让机械盘抖动）。
   // 只读「还没读到过的」路径：外部新增/改名时不能把 1 万项的 EXIF 全部重读一遍。
