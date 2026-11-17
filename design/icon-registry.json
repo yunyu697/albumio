@@ -10,6 +10,7 @@
     "i-fit": { "meaning": "适应窗口", "labels": ["适应窗口"] },
     "i-flip": { "meaning": "水平翻转", "labels": ["水平翻转"] },
     "i-fullscreen": { "meaning": "全屏看图", "labels": ["全屏看图"] },
+    "i-gear": { "meaning": "设置", "labels": ["设置"] },
     "i-grid": { "meaning": "文件夹视图", "labels": ["文件夹", "文件夹视图"] },
     "i-heart": { "meaning": "收藏", "labels": ["收藏"] },
     "i-info": { "meaning": "图片信息", "labels": ["图片信息"] },
