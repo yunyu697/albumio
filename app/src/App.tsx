@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
-import { getCurrentWindow } from "@tauri-apps/api/window";
+import { getCurrentWindow, LogicalPosition, LogicalSize } from "@tauri-apps/api/window";
 import { Icon, IconSprite } from "./icons";
 import Inspector from "./components/Inspector";
+import SettingsPopover from "./components/SettingsPopover";
 import { Sidebar } from "./components/Sidebar";
 import Toast, { type ToastData } from "./components/Toast";
 import type { PhotoMeta } from "./data/meta";
@@ -19,6 +20,8 @@ import {
 import { formatBytes } from "./format";
 import Browse, { type BrowseView, type GridStatus } from "./screens/Browse";
 import { isComposing, isTextInput } from "./keys";
+import { useTheme } from "./theme";
+import { loadPrefs, savePrefs } from "./prefs";
 
 const EMPTY_STATUS: GridStatus = {
   dir: "",
@@ -77,13 +80,15 @@ function parentOf(dir: string): string | null {
 }
 
 export default function App() {
-  const [cellIdx, setCellIdx] = useState(2);
+  const [themePref, setThemePref, resolvedTheme] = useTheme();
+  const prefsRef = useRef(loadPrefs());
+  const [cellIdx, setCellIdx] = useState(prefsRef.current.cellIdx);
   const [status, setStatus] = useState<GridStatus>(EMPTY_STATUS);
   const [meta, setMeta] = useState<PhotoMeta | null>(null);
-  const [inspectorOpen, setInspectorOpen] = useState(true);
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [inspectorOpen, setInspectorOpen] = useState(prefsRef.current.inspectorOpen);
+  const [sidebarOpen, setSidebarOpen] = useState(prefsRef.current.sidebarOpen);
   const [dir, setDir] = useState("");
-  const [view, setView] = useState<BrowseView>("folder");
+  const [view, setView] = useState<BrowseView>(prefsRef.current.view);
   const [reloadKey, setReloadKey] = useState(0);
   const [hist, setHist] = useState<{ list: string[]; i: number }>({ list: [], i: -1 });
   // 屏 2（M5）：viewer 挂在 Browse 里（它持有 entries/评分/收藏），App 只留
@@ -99,6 +104,8 @@ export default function App() {
   // M9：系统级提示（管理员拖放限制、拖放解析失败）；与 Browse 的删除 Toast 同一组件。
   const [toast, setToast] = useState<ToastData | null>(null);
   const toastIdRef = useRef(0);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const gearRef = useRef<HTMLButtonElement>(null);
 
   const notify = useCallback((text: string, error = false) => {
     setToast({ id: ++toastIdRef.current, text, error });
@@ -212,6 +219,96 @@ export default function App() {
       });
     return () => unlisten?.();
   }, [openPath]);
+
+  // 偏好持久化：状态变了就存，窗口状态用单独的 effect（只在 Resized/Moved 事件里存）。
+  useEffect(() => {
+    savePrefs({ sidebarOpen, inspectorOpen, cellIdx, view });
+  }, [sidebarOpen, inspectorOpen, cellIdx, view]);
+
+  // 窗口状态持久化：启动时还原 + Resized/Moved 时存（防抖 300ms，避免每像素写 localStorage）。
+  useEffect(() => {
+    if (!isTauri()) return;
+    const win = getCurrentWindow();
+    // 还原（位置 + 尺寸 + 最大化）。最大化时只还原位置/尺寸，最后调 maximize。
+    const init = async () => {
+      try {
+        const saved = prefsRef.current.window;
+        if (saved) {
+          const innerSize = await win.innerSize();
+          const currentMax = await win.isMaximized();
+          const similar =
+            Math.abs(innerSize.width - saved.width) < 4 &&
+            Math.abs(innerSize.height - saved.height) < 4 &&
+            !currentMax;
+          if (!similar) {
+            await win.setSize(new LogicalSize(saved.width, saved.height));
+            await win.setPosition(new LogicalPosition(saved.x, saved.y));
+            if (saved.maximized) await win.maximize();
+          }
+        }
+      } catch {
+        /* 还原失败静默；Tauri API 在某些沙箱下可能抛 */
+      }
+    };
+    void init();
+
+    // 存：Resized/Moved 事件合并，300ms 防抖。
+    let pending: ReturnType<typeof setTimeout> | null = null;
+    const persist = async () => {
+      try {
+        const innerSize = await win.innerSize();
+        const innerPos = await win.innerPosition();
+        const maximized = await win.isMaximized();
+        savePrefs({
+          window: {
+            width: innerSize.width,
+            height: innerSize.height,
+            x: innerPos.x,
+            y: innerPos.y,
+            maximized,
+          },
+        });
+      } catch {
+        /* 静默 */
+      }
+    };
+    const schedulePersist = () => {
+      if (pending) clearTimeout(pending);
+      pending = setTimeout(() => void persist(), 300);
+    };
+    const handleMoved = () => schedulePersist();
+    const handleResized = () => schedulePersist();
+    let unlistenMoved: (() => void) | undefined;
+    let unlistenResized: (() => void) | undefined;
+    void win.once("moved", handleMoved).then((fn) => { unlistenMoved = fn; });
+    void win.once("resized", handleResized).then((fn) => { unlistenResized = fn; });
+    // Tauri 2 的事件名：resized / moved
+    void win.listen("resized", handleResized).then((fn) => { unlistenResized = fn; });
+    void win.listen("moved", handleMoved).then((fn) => { unlistenMoved = fn; });
+    return () => {
+      if (pending) clearTimeout(pending);
+      unlistenMoved?.();
+      unlistenResized?.();
+    };
+  }, []);
+
+  // P1：F5 刷新 → Toast 反馈。
+  const lastReloadRef = useRef(0);
+  useEffect(() => {
+    if (reloadKey > lastReloadRef.current) {
+      lastReloadRef.current = reloadKey;
+      notify("已刷新");
+    }
+  }, [reloadKey, notify]);
+
+  // P1：批量处理启动 → Toast 反馈。
+  const lastBatchRef = useRef(0);
+  useEffect(() => {
+    if (batchRequest > lastBatchRef.current) {
+      lastBatchRef.current = batchRequest;
+      notify("打开批量处理面板");
+    }
+  }, [batchRequest, notify]);
 
   // Browse 的状态回传每帧都可能触发；内容相同就不换引用，避免自激重渲染。
   const onStatus = useCallback((s: GridStatus) => {
@@ -327,6 +424,15 @@ export default function App() {
           ))}
         </nav>
         <div className="titlebar-pad" data-tauri-drag-region />
+        <button
+          ref={gearRef}
+          className="gear-btn"
+          title="设置"
+          onClick={() => setSettingsOpen((v) => !v)}
+          aria-label="设置"
+        >
+          <Icon id="i-gear" size="xs" />
+        </button>
         <div className="winbtns">
           <button className="winbtn" title="最小化" onClick={() => windowAction("minimize")}>
             <Icon id="i-minus" size="xs" />
@@ -339,6 +445,19 @@ export default function App() {
           </button>
         </div>
       </header>
+
+      <SettingsPopover
+        open={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
+        themePref={themePref}
+        setThemePref={setThemePref}
+        resolvedTheme={resolvedTheme}
+        sidebarOpen={sidebarOpen}
+        onToggleSidebar={() => setSidebarOpen((v) => !v)}
+        inspectorOpen={inspectorOpen}
+        onToggleInspector={() => setInspectorOpen((v) => !v)}
+        anchorRef={gearRef}
+      />
 
       {/* 工具条 */}
       <div className="toolbar">

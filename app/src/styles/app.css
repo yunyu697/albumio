@@ -143,6 +143,60 @@ input { font: inherit; color: inherit; }
 .winbtn:hover { background: var(--ds-color-hover); color: var(--ds-color-text); }
 .winbtn.close:hover { background: var(--ds-color-danger); color: var(--lv-winclose-fg); }
 
+/* 设置齿轮 + Popover（主题/侧栏/Inspector） */
+.gear-btn {
+  width: var(--lv-winbtn-w);
+  height: var(--lv-winbtn-h);
+  align-self: center;
+  display: grid;
+  place-items: center;
+  color: var(--ds-color-text-muted);
+  border-radius: var(--ds-radius-sm);
+  transition: background var(--ds-dur-2) var(--ds-ease-standard), color var(--ds-dur-2) var(--ds-ease-standard);
+}
+.gear-btn:hover { background: var(--ds-color-hover); color: var(--ds-color-text); }
+.gear-btn .i { width: 14px; height: 14px; }
+.settings-pop {
+  position: fixed;
+  top: var(--lv-titlebar-h);
+  right: 10px;
+  z-index: 9000;
+  width: 260px;
+  padding: var(--ds-space-3);
+  background: var(--ds-color-surface);
+  border: var(--ds-border-hairline) solid var(--ds-color-line-strong);
+  border-radius: var(--ds-radius-md);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, .28);
+}
+.sp-section + .sp-section { margin-top: var(--ds-space-3); padding-top: var(--ds-space-3); border-top: var(--ds-border-hairline) solid var(--ds-color-line); }
+.sp-title { font-size: 11px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--ds-color-text-muted); margin-bottom: var(--ds-space-2); }
+.sp-theme-row { display: flex; flex-direction: column; gap: var(--ds-space-1); }
+.sp-theme-btn {
+  display: flex; align-items: center; gap: var(--ds-space-2);
+  width: 100%; padding: 7px 10px;
+  font-size: 13px;
+  color: var(--ds-color-text);
+  background: transparent;
+  border-radius: var(--ds-radius-sm);
+  transition: background var(--ds-dur-1) var(--ds-ease-standard);
+  text-align: left;
+}
+.sp-theme-btn:hover { background: var(--ds-color-hover); }
+.sp-theme-btn .i { width: 14px; height: 14px; color: var(--ds-color-text-muted); }
+.sp-theme-btn.on .i { color: var(--ds-color-accent); }
+.sp-row {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 7px 0;
+  font-size: 13px; color: var(--ds-color-text);
+}
+.sp-row input[type="checkbox"] { accent-color: var(--ds-color-accent); width: 16px; height: 16px; }
+
+/* 工具条 active 态：批量/全屏/编辑器面板打开时，按钮需要高亮。 */
+.tbtn.on, .ibtn.on, .seg-item.active {
+  background: var(--ds-color-accent-weak);
+  color: var(--ds-color-accent);
+}
+
 /* 工具条 */
 .toolbar {
   height: var(--lv-toolbar-h);
