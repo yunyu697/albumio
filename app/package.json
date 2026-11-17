@@ -1,6 +1,6 @@
 {
   "name": "albumio",
-  "version": "1.0.0-RC7",
+  "version": "1.0.0-RC8",
   "private": true,
   "type": "module",
   "scripts": {
