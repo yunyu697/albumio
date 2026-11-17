@@ -586,6 +586,7 @@ export default function App() {
         onRecursiveDepthChange={setRecursiveDepth}
         reopenLastDir={reopenLastDir}
         onReopenLastDirChange={setReopenLastDir}
+        onApplyLayout={(s, i) => { setSidebarOpen(s); setInspectorOpen(i); }}
         anchorRef={gearRef}
       />
 

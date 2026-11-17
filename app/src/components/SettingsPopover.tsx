@@ -24,6 +24,8 @@ interface Props {
   onRecursiveDepthChange: (d: number) => void;
   reopenLastDir: boolean;
   onReopenLastDirChange: (v: boolean) => void;
+  /** 预设布局一键切换：sidebar/inspector 组合。 */
+  onApplyLayout: (sidebar: boolean, inspector: boolean) => void;
   anchorRef: React.RefObject<HTMLButtonElement>;
 }
 
@@ -53,6 +55,20 @@ const VIEW_OPTS: { value: "folder" | "timeline"; label: string }[] = [
   { value: "timeline", label: "时间线" },
 ];
 
+interface LayoutChoice {
+  key: string;
+  label: string;
+  hint: string;
+  sidebar: boolean;
+  inspector: boolean;
+}
+const LAYOUT_OPTS: LayoutChoice[] = [
+  { key: "expanded", label: "扩展", hint: "侧栏 + 检查器全开", sidebar: true, inspector: true },
+  { key: "focus", label: "专注", hint: "关侧栏，留检查器", sidebar: false, inspector: true },
+  { key: "browse", label: "浏览", hint: "关检查器，留侧栏", sidebar: true, inspector: false },
+  { key: "clean", label: "极简", hint: "两侧全关，满屏浏览", sidebar: false, inspector: false },
+];
+
 export default function SettingsPopover({
   open,
   onClose,
@@ -73,6 +89,7 @@ export default function SettingsPopover({
   onRecursiveDepthChange,
   reopenLastDir,
   onReopenLastDirChange,
+  onApplyLayout,
   anchorRef,
 }: Props) {
   const popRef = useRef<HTMLDivElement>(null);
@@ -185,6 +202,30 @@ export default function SettingsPopover({
           <span>打开上次浏览的目录</span>
           <input type="checkbox" checked={reopenLastDir} onChange={(e) => onReopenLastDirChange(e.target.checked)} />
         </label>
+      </div>
+
+      <div className="sp-section">
+        <div className="sp-title">布局预设</div>
+        <div className="sp-layout-grid">
+          {LAYOUT_OPTS.map((opt) => {
+            const active = sidebarOpen === opt.sidebar && inspectorOpen === opt.inspector;
+            return (
+              <button
+                key={opt.key}
+                className={`sp-layout-card${active ? " on" : ""}`}
+                onClick={() => onApplyLayout(opt.sidebar, opt.inspector)}
+                title={opt.hint}
+              >
+                <div className="sp-layout-thumb">
+                  <span className={`sl-cell${opt.sidebar ? " on" : ""}`} />
+                  <span className="sl-main" />
+                  <span className={`sl-cell${opt.inspector ? " on" : ""}`} />
+                </div>
+                <div className="sp-layout-label">{opt.label}</div>
+              </button>
+            );
+          })}
+        </div>
       </div>
     </div>
   );
